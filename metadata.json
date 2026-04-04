@@ -1,0 +1,5 @@
+{
+  "name": "PEM FlowMaster",
+  "description": "A real-time side-car workflow board for pediatric emergency departments to track patient flow, reassessments, and team assignments.",
+  "requestFramePermissions": []
+}

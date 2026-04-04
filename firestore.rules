@@ -1,0 +1,51 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+    
+    function isValidString(field, min, max) {
+      return request.resource.data[field] is string && 
+             request.resource.data[field].size() >= min && 
+             request.resource.data[field].size() <= max;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+    
+    // Shifts
+    match /shifts/{shiftId} {
+      allow read, create, update: if isAuthenticated();
+      allow delete: if false; // Archive only
+      
+      // Patients
+      match /patients/{patientId} {
+        allow read, create, update, delete: if isAuthenticated();
+      }
+      
+      // Team Members
+      match /teamMembers/{memberId} {
+        allow read, create, update, delete: if isAuthenticated();
+      }
+      
+      // MedComm Calls
+      match /medCommCalls/{callId} {
+        allow read, create, update, delete: if isAuthenticated();
+      }
+    }
+    
+    // User Profiles (if needed)
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+    }
+  }
+}

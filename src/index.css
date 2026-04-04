@@ -1,0 +1,15 @@
+@import "tailwindcss";
+
+@theme {
+  /* BUH Primary Palette (Brown University Health / Lifespan inspired) */
+  --color-blue-50: #f0f7ff;
+  --color-blue-100: #e0effe;
+  --color-blue-200: #bae0fd;
+  --color-blue-300: #7cc8fb;
+  --color-blue-400: #38abf8;
+  --color-blue-500: #0072CE;
+  --color-blue-600: #003C71; /* BUH Primary Deep Navy */
+  --color-blue-700: #002d56;
+  --color-blue-800: #002649;
+  --color-blue-900: #00203d;
+}
