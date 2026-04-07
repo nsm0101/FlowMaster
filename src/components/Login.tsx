@@ -3,9 +3,15 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { auth, googleProvider } from '../firebase';
-import { signInWithEmailAndPassword, signInWithPopup, createUserWithEmailAndPassword } from 'firebase/auth';
+import { 
+  signInWithEmailAndPassword, 
+  signInWithPopup, 
+  createUserWithEmailAndPassword,
+  signInWithRedirect,
+  getRedirectResult
+} from 'firebase/auth';
 import { LogIn, UserPlus, Mail, Lock, ShieldCheck, AlertCircle } from 'lucide-react';
 import { cn } from '../lib/utils';
 
@@ -15,6 +21,23 @@ export const Login: React.FC = () => {
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    // Handle the result of a redirect login
+    const handleRedirectResult = async () => {
+      try {
+        const result = await getRedirectResult(auth);
+        if (result) {
+          // User is signed in
+          console.log('Redirect login success');
+        }
+      } catch (err: any) {
+        console.error('Redirect login error:', err);
+        setError(`Redirect Error: ${err.message}`);
+      }
+    };
+    handleRedirectResult();
+  }, []);
 
   const handleAuth = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,7 +50,13 @@ export const Login: React.FC = () => {
         await createUserWithEmailAndPassword(auth, email, password);
       }
     } catch (err: any) {
-      setError(err.message);
+      if (err.code === 'auth/internal-error') {
+        setError('Firebase Internal Error: This usually means the "Email/Password" sign-in provider is not enabled in your Firebase Console. Please enable it or use Google Login.');
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('Sign-in provider is not enabled. Please enable it in the Firebase Console.');
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -36,10 +65,33 @@ export const Login: React.FC = () => {
   const handleGoogleLogin = async () => {
     setLoading(true);
     setError('');
+    
+    // Detect if we should use redirect instead of popup
+    // Safari in-app browsers and some mobile environments block popups
+    const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const useRedirect = isSafari || isMobile;
+
     try {
-      await signInWithPopup(auth, googleProvider);
+      if (useRedirect) {
+        await signInWithRedirect(auth, googleProvider);
+      } else {
+        await signInWithPopup(auth, googleProvider);
+      }
     } catch (err: any) {
-      setError(err.message);
+      console.error("Google Login Error:", err);
+      if (err.code === 'auth/internal-error') {
+        try {
+          const parsedMessage = JSON.parse(err.message);
+          setError(`Firebase Internal Error: ${parsedMessage.error.message || err.message}`);
+        } catch {
+          setError(`Firebase Internal Error: ${err.message}`);
+        }
+      } else if (err.code === 'auth/operation-not-allowed') {
+        setError('Sign-in provider is not enabled. Please enable it in the Firebase Console.');
+      } else {
+        setError(err.message);
+      }
     } finally {
       setLoading(false);
     }
@@ -50,7 +102,7 @@ export const Login: React.FC = () => {
       <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 overflow-hidden">
         <div className="bg-blue-600 p-8 text-white text-center">
           <div className="w-20 h-20 bg-white rounded-full flex items-center justify-center mx-auto mb-4 shadow-lg overflow-hidden border-4 border-blue-500">
-            <img src="https://storage.googleapis.com/macha-attachments/6409895c-9c3c-4147-bd76-a1926678b668/wave.png" alt="Logo" className="w-full h-full object-cover" />
+            <img src="/images/FlowMaster_v1.png" alt="Logo" className="w-full h-full object-cover" />
           </div>
           <h1 className="text-2xl font-black tracking-tight">PEM FlowMaster</h1>
         </div>

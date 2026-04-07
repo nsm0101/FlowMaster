@@ -41,39 +41,39 @@ export const TeamSetup: React.FC<TeamSetupProps> = ({ teamMembers, onAdd, onRemo
   };
 
   return (
-    <div className="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+    <div className="bg-white dark:bg-gray-900 rounded-xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 space-y-6 transition-colors">
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800">
-          <Users size={20} className="text-blue-600" /> Team Setup
+        <h2 className="text-lg font-bold flex items-center gap-2 text-gray-800 dark:text-gray-200">
+          <Users size={20} className="text-blue-600 dark:text-blue-400" /> Team Setup
         </h2>
-        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">
+        <span className="text-xs font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
           {teamMembers.length} Members
         </span>
       </div>
 
-      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-3 p-4 bg-gray-50 rounded-xl border border-gray-100">
+      <form onSubmit={handleSubmit} className="grid grid-cols-1 md:grid-cols-4 gap-3 p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700 transition-colors">
         <div className="space-y-1">
-          <label className="text-[10px] font-bold text-gray-500 uppercase px-1">First Name</label>
+          <label className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase px-1">First Name</label>
           <input 
-            className="w-full p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full p-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
             placeholder="John"
             value={formData.firstName}
             onChange={(e) => setFormData({ ...formData, firstName: e.target.value })}
           />
         </div>
         <div className="space-y-1">
-          <label className="text-[10px] font-bold text-gray-500 uppercase px-1">Last Name</label>
+          <label className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase px-1">Last Name</label>
           <input 
-            className="w-full p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full p-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
             placeholder="Doe"
             value={formData.lastName}
             onChange={(e) => setFormData({ ...formData, lastName: e.target.value })}
           />
         </div>
         <div className="space-y-1">
-          <label className="text-[10px] font-bold text-gray-500 uppercase px-1">Initials</label>
+          <label className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase px-1">Initials</label>
           <input 
-            className="w-full p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+            className="w-full p-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
             placeholder="JD"
             maxLength={3}
             value={formData.initials}
@@ -81,10 +81,10 @@ export const TeamSetup: React.FC<TeamSetupProps> = ({ teamMembers, onAdd, onRemo
           />
         </div>
         <div className="space-y-1">
-          <label className="text-[10px] font-bold text-gray-500 uppercase px-1">Role</label>
+          <label className="text-[10px] font-bold text-gray-500 dark:text-gray-400 uppercase px-1">Role</label>
           <div className="flex gap-2">
             <select 
-              className="flex-1 p-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+              className="flex-1 p-2 border border-gray-200 dark:border-gray-700 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 rounded-lg text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
               value={formData.role}
               onChange={(e) => setFormData({ ...formData, role: e.target.value as Role })}
             >
@@ -109,15 +109,15 @@ export const TeamSetup: React.FC<TeamSetupProps> = ({ teamMembers, onAdd, onRemo
         {teamMembers.map(member => (
           <div 
             key={member.id} 
-            className="flex items-center justify-between p-3 bg-white border border-gray-100 rounded-xl shadow-sm hover:border-gray-200 transition-all group"
+            className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-xl shadow-sm hover:border-gray-200 dark:hover:border-gray-600 transition-all group"
           >
             <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-600 font-bold text-sm border border-blue-100">
+              <div className="w-10 h-10 rounded-full bg-blue-50 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 font-bold text-sm border border-blue-100 dark:border-blue-800/50">
                 {member.initials}
               </div>
               <div className="flex flex-col">
-                <span className="text-sm font-bold text-gray-800">{member.firstName} {member.lastName}</span>
-                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                <span className="text-sm font-bold text-gray-800 dark:text-gray-200">{member.firstName} {member.lastName}</span>
+                <div className="flex items-center gap-1 text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
                   {getRoleIcon(member.role)}
                   {member.role}
                 </div>
@@ -125,14 +125,14 @@ export const TeamSetup: React.FC<TeamSetupProps> = ({ teamMembers, onAdd, onRemo
             </div>
             <button 
               onClick={() => onRemove(member.id)}
-              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+              className="p-2 text-gray-300 dark:text-gray-600 hover:text-red-500 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-lg transition-all opacity-0 group-hover:opacity-100"
             >
               <Trash2 size={18} />
             </button>
           </div>
         ))}
         {teamMembers.length === 0 && (
-          <div className="col-span-full py-12 text-center text-gray-400 italic text-sm border-2 border-dashed border-gray-100 rounded-xl">
+          <div className="col-span-full py-12 text-center text-gray-400 dark:text-gray-500 italic text-sm border-2 border-dashed border-gray-100 dark:border-gray-800 rounded-xl">
             No team members added yet. Add your shift team above.
           </div>
         )}

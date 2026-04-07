@@ -1,5 +1,13 @@
 @import "tailwindcss";
 
+@layer base {
+  html, body {
+    overscroll-behavior-y: none;
+    overscroll-behavior-x: none;
+    touch-action: manipulation;
+  }
+}
+
 @theme {
   /* BUH Primary Palette (Brown University Health / Lifespan inspired) */
   --color-blue-50: #f0f7ff;

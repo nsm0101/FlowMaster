@@ -4,20 +4,24 @@
  */
 
 import React from 'react';
-import { LogOut, User, LayoutDashboard, PhoneCall, Settings, Users, Clock } from 'lucide-react';
+import { LogOut, User, LayoutDashboard, PhoneCall, Settings, Users, Clock, UserPlus, X, Share2, Check } from 'lucide-react';
 import { cn, getTimerColor } from '../lib/utils';
+import { TeamMember, Role } from '../types';
 
 interface LayoutProps {
   children: React.ReactNode;
-  activeTab: 'board' | 'medcomm' | 'team' | 'settings';
-  setActiveTab: (tab: 'board' | 'medcomm' | 'team' | 'settings') => void;
+  activeTab: 'board' | 'medcomm' | 'team' | 'settings' | 'handoff';
+  setActiveTab: (tab: 'board' | 'medcomm' | 'team' | 'settings' | 'handoff') => void;
   user: any;
   onLogout: () => void;
+  onAddTeamMember?: (member: Partial<TeamMember>) => void;
+  activeShiftId?: string | null;
 }
 
-export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user, onLogout }) => {
+export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTab, user, onLogout, onAddTeamMember, activeShiftId }) => {
   const tabs = [
     { id: 'board', label: 'Board', icon: <LayoutDashboard size={20} /> },
+    { id: 'handoff', label: 'Handoff', icon: <Users size={20} /> },
     { id: 'medcomm', label: 'MedComm', icon: <PhoneCall size={20} /> },
     { id: 'settings', label: 'Settings', icon: <Settings size={20} /> },
   ] as const;
@@ -66,18 +70,29 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
     return `${h.toString().padStart(2, '0')}:${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
   };
 
+  const [isCopied, setIsCopied] = React.useState(false);
+
+  const handleShare = () => {
+    if (!activeShiftId) return;
+    const url = new URL(window.location.href);
+    url.searchParams.set('shiftId', activeShiftId);
+    navigator.clipboard.writeText(url.toString());
+    setIsCopied(true);
+    setTimeout(() => setIsCopied(false), 2000);
+  };
+
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-[100dvh] bg-gray-50 dark:bg-gray-950 flex flex-col transition-colors">
       {/* Top Navigation - Hidden on Mobile */}
-      <header className="bg-white border-b border-gray-200 sticky top-0 z-50 shadow-sm md:block">
+      <header className="bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-800 sticky top-0 z-50 shadow-sm md:block transition-colors">
         <div className="max-w-7xl mx-auto px-4 h-10 md:h-12 flex items-center justify-between">
           <div className="flex items-center gap-2">
-            <img src="https://storage.googleapis.com/macha-attachments/6409895c-9c3c-4147-bd76-a1926678b668/wave.png" alt="Logo" className="w-6 h-6 md:w-8 md:h-8 object-contain" />
-            <h1 className="text-sm md:text-base font-black text-gray-900 tracking-tight">PEM <span className="text-blue-600">FlowMaster</span></h1>
+            <img src="/images/FlowMaster_v1.png" alt="Logo" className="w-6 h-6 md:w-8 md:h-8 object-contain" />
+            <h1 className="text-sm md:text-base font-black text-gray-900 dark:text-white tracking-tight">PEM <span className="text-blue-600 dark:text-blue-400">FlowMaster</span></h1>
           </div>
 
           <div 
-            className="flex items-center gap-2 px-3 py-1 bg-gray-50 rounded-full border border-gray-100 shadow-xs cursor-pointer select-none active:scale-95 transition-transform"
+            className="flex items-center gap-2 px-3 py-1 bg-gray-50 dark:bg-gray-800 rounded-full border border-gray-100 dark:border-gray-700 shadow-xs cursor-pointer select-none active:scale-95 transition-transform"
             onContextMenu={(e) => { e.preventDefault(); handleTimerReset(); }}
             onTouchStart={startHold}
             onTouchEnd={endHold}
@@ -92,7 +107,20 @@ export const Layout: React.FC<LayoutProps> = ({ children, activeTab, setActiveTa
             </span>
           </div>
 
-          <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 md:gap-4">
+            {activeShiftId && (
+              <button 
+                onClick={handleShare}
+                className="flex items-center gap-1 px-2 py-1 bg-blue-50 text-blue-600 rounded-full border border-blue-100 hover:bg-blue-100 transition-colors"
+                title="Share Session"
+              >
+                {isCopied ? <Check size={14} /> : <Share2 size={14} />}
+                <span className="text-[10px] font-black uppercase tracking-tighter hidden sm:inline">
+                  {isCopied ? 'Copied!' : 'Share'}
+                </span>
+              </button>
+            )}
+
             <div className="flex items-center gap-2 px-2 py-0.5 md:px-3 md:py-1 bg-gray-50 rounded-full border border-gray-100">
               <div className="w-4 h-4 md:w-5 md:h-5 rounded-full bg-blue-100 flex items-center justify-center text-blue-600">
                 <User size={10} />

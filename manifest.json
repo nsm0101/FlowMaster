@@ -1,0 +1,23 @@
+{
+  "name": "PEM FlowMaster",
+  "short_name": "PEM Flow",
+  "description": "Pediatric Emergency Medicine Flow Management",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#2563eb",
+  "icons": [
+    {
+      "src": "/images/FlowMaster_v1.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/images/FlowMaster_v1.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

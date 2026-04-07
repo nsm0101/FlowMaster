@@ -8,6 +8,14 @@ service cloud.firestore {
       return request.auth != null;
     }
     
+    function isAdmin() {
+      return isAuthenticated() && 
+        (
+          (request.auth.token.email == "nickolas.mancini@gmail.com" && request.auth.token.email_verified == true) ||
+          (exists(/databases/$(database)/documents/users/$(request.auth.uid)) && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+        );
+    }
+    
     function isOwner(userId) {
       return isAuthenticated() && request.auth.uid == userId;
     }
@@ -25,7 +33,7 @@ service cloud.firestore {
     // Shifts
     match /shifts/{shiftId} {
       allow read, create, update: if isAuthenticated();
-      allow delete: if false; // Archive only
+      allow delete: if isAdmin(); // Only admins can delete shifts
       
       // Patients
       match /patients/{patientId} {
@@ -43,9 +51,10 @@ service cloud.firestore {
       }
     }
     
-    // User Profiles (if needed)
+    // User Profiles
     match /users/{userId} {
-      allow read, write: if isOwner(userId);
+      allow read: if isAuthenticated(); // Allow reading profiles (for team lists)
+      allow write: if isOwner(userId) || isAdmin();
     }
   }
 }

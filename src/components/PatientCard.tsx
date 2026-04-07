@@ -40,7 +40,7 @@ import { motion, useMotionValue, useTransform } from 'motion/react';
 
 interface PatientCardProps {
   patient: Patient;
-  onUpdate: (id: string, updates: Partial<Patient>) => void;
+  onUpdate: (id: string, updates: Partial<Patient>, isSwipe?: boolean) => void;
   onResetTimer: (id: string) => void;
   onDelete: (id: string) => void;
   onComplete: (id: string) => void;
@@ -62,6 +62,8 @@ export const PatientCard: React.FC<PatientCardProps> = ({
   const [isExpanded, setIsExpanded] = useState(false);
   const [elapsed, setElapsed] = useState<number>(0);
   const [showStatusMenu, setShowStatusMenu] = useState(false);
+  const [menuPosition, setMenuPosition] = useState<{ x: number, y: number } | null>(null);
+  const [lastTap, setLastTap] = useState(0);
 
   const { setNodeRef, isOver } = useDroppable({
     id: patient.id,
@@ -69,10 +71,13 @@ export const PatientCard: React.FC<PatientCardProps> = ({
 
   // Swipe logic
   const x = useMotionValue(0);
+  const isDark = document.documentElement.classList.contains('dark');
   const background = useTransform(
     x,
     [-100, 0, 100],
-    ["#fce4ec", "#ffffff", "#e8f5e9"] // Pink for Admit (Left), White, Green for Discharge (Right)
+    isDark 
+      ? ["#4c1d95", "#1f2937", "#064e3b"] // Dark mode colors
+      : ["#fce4ec", "#ffffff", "#e8f5e9"] // Light mode colors
   );
 
   useEffect(() => {
@@ -84,16 +89,37 @@ export const PatientCard: React.FC<PatientCardProps> = ({
   }, [patient.lastAssessmentAt]);
 
   const handleDragEnd = (_: any, info: any) => {
-    if (info.offset.x > 100) {
-      onUpdate(patient.id, { status: 'Discharge' });
-    } else if (info.offset.x < -100) {
-      onUpdate(patient.id, { status: 'Admit' });
+    const threshold = 80;
+    const velocityThreshold = 500;
+    if (info.offset.x > threshold || info.velocity.x > velocityThreshold) {
+      onUpdate(patient.id, { status: 'Discharge' }, true);
+    } else if (info.offset.x < -threshold || info.velocity.x < -velocityThreshold) {
+      onUpdate(patient.id, { status: 'Admit' }, true);
     }
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
+    if (window.innerWidth < 768) {
+      setMenuPosition(null);
+    } else {
+      setMenuPosition({ x: e.clientX, y: e.clientY });
+    }
     setShowStatusMenu(true);
+  };
+
+  const handleCardClick = (e: React.MouseEvent) => {
+    const now = Date.now();
+    const DOUBLE_PRESS_DELAY = 300;
+    if (now - lastTap < DOUBLE_PRESS_DELAY) {
+      // Double tap
+      e.preventDefault();
+      handleContextMenu(e);
+    } else {
+      // Single tap
+      setIsExpanded(!isExpanded);
+    }
+    setLastTap(now);
   };
 
   const formatTime = (seconds: number) => {
@@ -266,13 +292,13 @@ export const PatientCard: React.FC<PatientCardProps> = ({
 
   const getTaskStyle = (state: TaskState | MedsConsultState | 'home' | 'facility' | 'none') => {
     switch (state) {
-      case 'ordered': return 'bg-blue-100 text-blue-700 border-blue-300';
-      case 'pending': return 'bg-yellow-100 text-yellow-700 border-yellow-300';
-      case 'complete': return 'bg-green-100 text-green-700 border-green-300';
-      case 'home': return 'bg-blue-50 text-blue-600 border-blue-200';
-      case 'facility': return 'bg-purple-50 text-purple-600 border-purple-200';
-      case 'none': return 'bg-gray-100 text-gray-400 border-gray-300';
-      default: return 'bg-gray-50 text-gray-400 border-gray-200';
+      case 'ordered': return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-300 dark:border-blue-800/50';
+      case 'pending': return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-500 border-yellow-300 dark:border-yellow-800/50';
+      case 'complete': return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-300 dark:border-green-800/50';
+      case 'home': return 'bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 border-blue-200 dark:border-blue-800/50';
+      case 'facility': return 'bg-purple-50 dark:bg-purple-900/20 text-purple-600 dark:text-purple-400 border-purple-200 dark:border-purple-800/50';
+      case 'none': return 'bg-gray-100 dark:bg-gray-800 text-gray-400 dark:text-gray-500 border-gray-300 dark:border-gray-700';
+      default: return 'bg-gray-50 dark:bg-gray-800/50 text-gray-400 dark:text-gray-500 border-gray-200 dark:border-gray-700';
     }
   };
 
@@ -296,6 +322,8 @@ export const PatientCard: React.FC<PatientCardProps> = ({
       ref={setNodeRef}
       drag="x"
       dragConstraints={{ left: 0, right: 0 }}
+      dragElastic={0.8}
+      dragDirectionLock
       onDragEnd={handleDragEnd}
       animate={isGoodToGo ? {
         boxShadow: ["0px 0px 0px rgba(34, 197, 94, 0)", "0px 0px 30px rgba(34, 197, 94, 0.5)", "0px 0px 0px rgba(34, 197, 94, 0)"],
@@ -304,12 +332,12 @@ export const PatientCard: React.FC<PatientCardProps> = ({
       style={{ x, background }}
       onContextMenu={handleContextMenu}
       className={cn(
-        "group rounded-xl shadow-sm mb-4 transition-all relative touch-pan-y w-full max-w-full bg-white border border-gray-100 overflow-visible",
+        "group rounded-xl shadow-sm mb-4 transition-all relative touch-pan-y w-full max-w-full bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 overflow-visible",
         getSeenBorderStyle(patient.seenState),
-        patient.isPinned && "ring-2 ring-yellow-400",
+        patient.isPinned && "ring-2 ring-yellow-400 dark:ring-yellow-500",
         patient.isCompleted && "opacity-60 grayscale-[0.5]",
-        isOver && "ring-4 ring-blue-400 scale-[1.01] z-20",
-        isGoodToGo && "border-green-500 border-2"
+        isOver && "ring-4 ring-blue-400 dark:ring-blue-500 scale-[1.01] z-20",
+        isGoodToGo && "border-green-500 dark:border-green-400 border-2"
       )}
     >
       {/* Top Status Gradient Background */}
@@ -324,7 +352,10 @@ export const PatientCard: React.FC<PatientCardProps> = ({
               opacity: [0.1, 0.2, 0.1],
             }}
             transition={{ repeat: Infinity, duration: 2, ease: "easeInOut" }}
-            className="text-[80px] md:text-[140px] font-black text-green-600 uppercase tracking-tighter rotate-[-12deg] whitespace-nowrap select-none flex flex-col leading-none"
+            className={cn(
+              "font-black text-green-600 uppercase tracking-tighter rotate-[-12deg] whitespace-nowrap select-none flex flex-col leading-none",
+              compactMode ? "text-[40px] md:text-[60px]" : "text-[60px] md:text-[100px]"
+            )}
           >
             <span>GOOD TO GO!</span>
             <span className="ml-20">GOOD TO GO!</span>
@@ -336,11 +367,11 @@ export const PatientCard: React.FC<PatientCardProps> = ({
       <button 
         onClick={(e) => { e.stopPropagation(); onUpdate(patient.id, { isPinned: !patient.isPinned }); }}
         className={cn(
-          "absolute w-7 h-7 rounded-xl flex items-center justify-center transition-all z-30 border-2 border-white",
+          "absolute w-7 h-7 rounded-xl flex items-center justify-center transition-all z-30 border-2 border-white dark:border-gray-900",
           "top-1/2 -translate-y-1/2 -left-3 shadow-md",
           patient.isPinned 
-            ? "bg-yellow-400 text-yellow-900 scale-110 rotate-12 shadow-yellow-200 opacity-100" 
-            : "bg-white/80 text-gray-300 hover:text-gray-500 opacity-0 group-hover:opacity-100"
+            ? "bg-yellow-400 dark:bg-yellow-500 text-yellow-900 scale-110 rotate-12 shadow-yellow-200 dark:shadow-yellow-900/50 opacity-100" 
+            : "bg-white/80 dark:bg-gray-800/80 text-gray-300 dark:text-gray-600 hover:text-gray-500 dark:hover:text-gray-400 opacity-0 group-hover:opacity-100"
         )}
       >
         <Pin size={12} className={cn(patient.isPinned && "fill-current")} />
@@ -355,7 +386,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
           <div 
             key={m.id}
             className={cn(
-              "w-9 h-9 rounded-full border-2 border-white flex items-center justify-center text-[9px] font-black shadow-lg transition-transform hover:scale-110 hover:z-40 relative",
+              "w-9 h-9 rounded-full border-2 border-white dark:border-gray-900 flex items-center justify-center text-[9px] font-black shadow-lg transition-transform hover:scale-110 hover:z-40 relative",
               getRoleColor(m.role)
             )}
             title={`${m.firstName} ${m.lastName} (${m.role})`}
@@ -364,7 +395,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
           </div>
         ))}
         {assignedMembers.length === 0 && (
-          <div className="w-9 h-9 rounded-full border-2 border-dashed border-gray-200 flex items-center justify-center text-gray-300 bg-white/80 backdrop-blur-sm shadow-sm">
+          <div className="w-9 h-9 rounded-full border-2 border-dashed border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-300 dark:text-gray-600 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow-sm">
             <User size={12} />
           </div>
         )}
@@ -373,17 +404,34 @@ export const PatientCard: React.FC<PatientCardProps> = ({
       {/* Quick Status Menu (Right Click / Long Press) */}
       {showStatusMenu && (
         <div 
-          className="fixed inset-0 z-[100] bg-black/20 backdrop-blur-sm flex items-center justify-center p-4 animate-in fade-in duration-200"
-          onClick={() => setShowStatusMenu(false)}
+          className={cn(
+            "fixed inset-0 z-[100] flex",
+            menuPosition ? "" : "bg-black/20 backdrop-blur-sm items-center justify-center p-4 animate-in fade-in duration-200"
+          )}
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowStatusMenu(false);
+          }}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setShowStatusMenu(false);
+          }}
         >
           <div 
-            className="bg-white rounded-2xl shadow-2xl w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200"
+            className={cn(
+              "bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 transition-colors",
+              menuPosition ? "w-64 border border-gray-200 dark:border-gray-800 absolute" : "w-full max-w-sm relative"
+            )}
+            style={menuPosition ? {
+              left: Math.min(menuPosition.x, window.innerWidth - 260),
+              top: Math.min(menuPosition.y, window.innerHeight - 320),
+            } : {}}
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="p-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
-              <h3 className="text-xs font-black text-gray-400 uppercase tracking-widest">Quick Status Change</h3>
-              <button onClick={() => setShowStatusMenu(false)} className="p-1 hover:bg-gray-200 rounded-lg transition-colors">
-                <X size={18} className="text-gray-400" />
+            <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50 transition-colors">
+              <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Quick Status Change</h3>
+              <button onClick={() => setShowStatusMenu(false)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors">
+                <X size={18} className="text-gray-400 dark:text-gray-500" />
               </button>
             </div>
             <div className="p-4 grid grid-cols-2 gap-3">
@@ -394,18 +442,18 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                   className={cn(
                     "py-3 px-4 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all border shadow-sm",
                     patient.status === s 
-                      ? "bg-blue-900 text-white border-blue-900 shadow-md scale-[0.98]" 
-                      : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50 hover:border-gray-300"
+                      ? "bg-blue-900 dark:bg-blue-600 text-white border-blue-900 dark:border-blue-600 shadow-md scale-[0.98]" 
+                      : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
                   )}
                 >
                   {s}
                 </button>
               ))}
             </div>
-            <div className="p-3 bg-gray-50 flex justify-center">
+            <div className="p-3 bg-gray-50 dark:bg-gray-800/50 flex justify-center transition-colors">
               <button 
                 onClick={() => setShowStatusMenu(false)}
-                className="text-[10px] font-bold text-gray-400 uppercase tracking-widest hover:text-gray-600"
+                className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
               >
                 Cancel
               </button>
@@ -419,36 +467,36 @@ export const PatientCard: React.FC<PatientCardProps> = ({
           "cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4 relative z-10",
           compactMode ? "p-1.5" : "p-3"
         )}
-        onClick={() => setIsExpanded(!isExpanded)}
+        onClick={handleCardClick}
       >
         {/* Left Section: Room & Initials */}
         <div className="flex items-center gap-3 md:gap-4 md:pl-8">
           {/* Overlapping Room Box - Top Left on Desktop */}
           <div className={cn(
-            "flex flex-col items-center justify-center bg-white rounded-2xl border-2 border-gray-100 shadow-lg shrink-0 z-20 transition-all",
+            "flex flex-col items-center justify-center bg-white dark:bg-gray-800 rounded-2xl border-2 border-gray-100 dark:border-gray-700 shadow-lg shrink-0 z-20 transition-all",
             "md:absolute md:-top-4 md:-left-4 md:ml-0 -ml-6 relative",
             compactMode ? "w-10 h-10" : "w-14 h-14"
           )}>
-            {!compactMode && <span className="text-[8px] font-black text-gray-400 uppercase leading-none mb-0.5">Room</span>}
-            <span className={cn("font-black text-gray-900 leading-none", compactMode ? "text-sm" : "text-xl")}>{patient.room}</span>
+            {!compactMode && <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-0.5">Room</span>}
+            <span className={cn("font-black text-gray-900 dark:text-white leading-none", compactMode ? "text-sm" : "text-xl")}>{patient.room}</span>
           </div>
           
           <div className="flex flex-col min-w-0 flex-1">
             <div className="flex items-center gap-2 flex-wrap">
-              <span className={cn("font-black text-gray-900 tracking-tight truncate", compactMode ? "text-sm" : "text-xl")}>{patient.initials}</span>
-              <div className="flex items-center gap-1 bg-gray-100 px-1.5 py-0.5 rounded-md">
-                <span className={cn("font-bold text-gray-400", compactMode ? "text-[10px]" : "text-xs")}>{patient.age}y</span>
-                <span className="text-[10px] font-black text-gray-300">/</span>
+              <span className={cn("font-black text-gray-900 dark:text-white tracking-tight truncate", compactMode ? "text-sm" : "text-xl")}>{patient.initials}</span>
+              <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-md transition-colors">
+                <span className={cn("font-bold text-gray-400 dark:text-gray-500", compactMode ? "text-[10px]" : "text-xs")}>{patient.age}y</span>
+                <span className="text-[10px] font-black text-gray-300 dark:text-gray-600">/</span>
                 <span className={cn(
                   "font-black",
                   compactMode ? "text-[10px]" : "text-xs",
-                  patient.sex === 'M' ? "text-blue-500" : patient.sex === 'F' ? "text-pink-500" : "text-purple-500"
+                  patient.sex === 'M' ? "text-blue-500 dark:text-blue-400" : patient.sex === 'F' ? "text-pink-500 dark:text-pink-400" : "text-purple-500 dark:text-purple-400"
                 )}>
                   {patient.sex}
                 </span>
               </div>
               {patient.isCompleted && (
-                <div className="bg-green-100 text-green-700 px-1.5 py-0.5 rounded-md text-[8px] md:text-[10px] font-black uppercase flex items-center gap-1">
+                <div className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded-md text-[8px] md:text-[10px] font-black uppercase flex items-center gap-1">
                   <CheckCircle2 size={compactMode ? 8 : 10} /> Done
                 </div>
               )}
@@ -457,7 +505,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
             {/* Chief Complaint - Editable In Place */}
             <textarea 
               className={cn(
-                "w-full bg-transparent border-none focus:ring-0 font-bold text-gray-500 resize-none no-scrollbar mt-0.5 leading-tight",
+                "w-full bg-transparent border-none focus:ring-0 font-bold text-gray-500 dark:text-gray-400 resize-none no-scrollbar mt-0.5 leading-tight",
                 compactMode ? "text-[9px]" : "text-[11px]"
               )}
               rows={2}
@@ -478,7 +526,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
               </div>
               {patient.workflowFlags?.boarding && (
                 <div className={cn(
-                  "px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider border shadow-sm w-fit bg-red-100 text-red-700 border-red-200 flex items-center gap-1",
+                  "px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider border shadow-sm w-fit bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800/50 flex items-center gap-1",
                   compactMode ? "text-[7px]" : "text-[9px]"
                 )}>
                   <Bed size={compactMode ? 8 : 10} />
@@ -493,7 +541,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
         <div className="flex-[1.2] flex items-stretch justify-center px-4 min-w-0 self-stretch">
           <textarea 
             className={cn(
-              "hidden md:block w-full bg-transparent border-none focus:ring-0 font-bold text-gray-800 resize-none no-scrollbar text-center leading-tight h-full py-2",
+              "hidden md:block w-full bg-transparent border-none focus:ring-0 font-bold text-gray-800 dark:text-gray-200 resize-none no-scrollbar text-center leading-tight h-full py-2",
               compactMode ? "text-[10px]" : "text-xs"
             )}
             rows={2}

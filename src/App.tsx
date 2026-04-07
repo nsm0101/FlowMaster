@@ -21,6 +21,7 @@ import {
   getDocs,
   writeBatch
 } from 'firebase/firestore';
+import { handleFirestoreError, OperationType } from './lib/firebaseUtils';
 import { Patient, TeamMember, MedCommCall, Shift } from './types';
 import { Layout } from './components/Layout';
 import { Login } from './components/Login';
@@ -35,7 +36,7 @@ import { Plus, Loader2, AlertCircle } from 'lucide-react';
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'board' | 'medcomm' | 'team' | 'settings'>('board');
+  const [activeTab, setActiveTab] = useState<'board' | 'medcomm' | 'team' | 'settings' | 'handoff'>('board');
   
   const [shifts, setShifts] = useState<Shift[]>([]);
   const [activeShiftId, setActiveShiftId] = useState<string | null>(localStorage.getItem('activeShiftId'));
@@ -50,6 +51,20 @@ export default function App() {
   const [colorBlindMode, setColorBlindMode] = useState<boolean>(localStorage.getItem('colorBlindMode') === 'true');
   const [compactMode, setCompactMode] = useState<boolean>(localStorage.getItem('compactMode') === 'true');
   const [twoColumnMode, setTwoColumnMode] = useState<boolean>(localStorage.getItem('twoColumnMode') === 'true');
+  const [darkMode, setDarkMode] = useState<boolean>(localStorage.getItem('darkMode') === 'true');
+  const [undoAction, setUndoAction] = useState<{ id: string, previousData: Partial<Patient>, message: string, timeoutId?: NodeJS.Timeout } | null>(null);
+
+  // Handle URL shiftId parameter
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const shiftIdFromUrl = params.get('shiftId');
+    if (shiftIdFromUrl) {
+      setActiveShiftId(shiftIdFromUrl);
+      localStorage.setItem('activeShiftId', shiftIdFromUrl);
+      // Clean up URL
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+  }, []);
 
   useEffect(() => {
     localStorage.setItem('colorBlindMode', colorBlindMode.toString());
@@ -63,10 +78,35 @@ export default function App() {
     localStorage.setItem('twoColumnMode', twoColumnMode.toString());
   }, [twoColumnMode]);
 
+  useEffect(() => {
+    localStorage.setItem('darkMode', darkMode.toString());
+    if (darkMode) {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, [darkMode]);
+
   // Auth State
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (u) => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
       setUser(u);
+      if (u) {
+        // Ensure user document exists
+        const userRef = doc(db, 'users', u.uid);
+        try {
+          await setDoc(userRef, {
+            email: u.email,
+            lastLogin: Timestamp.now(),
+            role: u.email === 'Nickolas.Mancini@gmail.com' ? 'admin' : 'user'
+          }, { merge: true });
+        } catch (error) {
+          console.error("Failed to update user document:", error);
+          // We don't throw handleFirestoreError here because we want the app to 
+          // continue loading even if the user document update fails 
+          // (e.g. due to missing Firestore rules on a new project)
+        }
+      }
       setLoading(false);
     });
     return () => unsubscribe();
@@ -82,6 +122,8 @@ export default function App() {
       if (!activeShiftId && s.length > 0) {
         setActiveShiftId(s[0].id);
       }
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, 'shifts');
     });
     return () => unsubscribe();
   }, [user]);
@@ -97,16 +139,22 @@ export default function App() {
 
     localStorage.setItem('activeShiftId', activeShiftId);
 
-    const unsubPatients = onSnapshot(collection(db, `shifts/${activeShiftId}/patients`), (snapshot) => {
+    const unsubPatients = onSnapshot(query(collection(db, `shifts/${activeShiftId}/patients`), orderBy('createdAt', 'desc')), (snapshot) => {
       setPatients(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Patient)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `shifts/${activeShiftId}/patients`);
     });
 
     const unsubTeam = onSnapshot(collection(db, `shifts/${activeShiftId}/teamMembers`), (snapshot) => {
       setTeamMembers(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as TeamMember)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `shifts/${activeShiftId}/teamMembers`);
     });
 
     const unsubMedComm = onSnapshot(collection(db, `shifts/${activeShiftId}/medCommCalls`), (snapshot) => {
       setMedCommCalls(snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as MedCommCall)));
+    }, (error) => {
+      handleFirestoreError(error, OperationType.LIST, `shifts/${activeShiftId}/medCommCalls`);
     });
 
     return () => {
@@ -126,8 +174,24 @@ export default function App() {
       isActive: true,
       createdBy: user.uid
     };
-    const docRef = await addDoc(collection(db, 'shifts'), newShift);
-    setActiveShiftId(docRef.id);
+    try {
+      const docRef = await addDoc(collection(db, 'shifts'), newShift);
+      setActiveShiftId(docRef.id);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, 'shifts');
+    }
+  };
+
+  const deleteShift = async (id: string) => {
+    try {
+      await deleteDoc(doc(db, 'shifts', id));
+      if (activeShiftId === id) {
+        setActiveShiftId(null);
+        localStorage.removeItem('activeShiftId');
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `shifts/${id}`);
+    }
   };
 
   const addPatient = async () => {
@@ -155,20 +219,66 @@ export default function App() {
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now()
     };
-    await addDoc(collection(db, `shifts/${activeShiftId}/patients`), newPatient);
+    try {
+      await addDoc(collection(db, `shifts/${activeShiftId}/patients`), newPatient);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `shifts/${activeShiftId}/patients`);
+    }
   };
 
-  const updatePatient = async (id: string, updates: Partial<Patient>) => {
+  const updatePatient = async (id: string, updates: Partial<Patient>, isSwipe: boolean = false) => {
     if (!activeShiftId) return;
-    await updateDoc(doc(db, `shifts/${activeShiftId}/patients`, id), {
-      ...updates,
-      updatedAt: Timestamp.now()
-    });
+    
+    const patient = patients.find(p => p.id === id);
+    const previousData: Partial<Patient> = {};
+    if (patient && isSwipe) {
+      for (const key in updates) {
+        previousData[key as keyof Patient] = patient[key as keyof Patient] as any;
+      }
+    }
+
+    try {
+      await updateDoc(doc(db, `shifts/${activeShiftId}/patients`, id), {
+        ...updates,
+        updatedAt: Timestamp.now()
+      });
+
+      if (isSwipe && patient) {
+        if (undoAction?.timeoutId) clearTimeout(undoAction.timeoutId);
+        const timeoutId = setTimeout(() => setUndoAction(null), 5000);
+        setUndoAction({
+          id,
+          previousData,
+          message: `Status changed to ${updates.status}`,
+          timeoutId
+        });
+      }
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `shifts/${activeShiftId}/patients/${id}`);
+    }
+  };
+
+  const handleUndo = async () => {
+    if (!undoAction || !activeShiftId) return;
+    try {
+      await updateDoc(doc(db, `shifts/${activeShiftId}/patients`, undoAction.id), {
+        ...undoAction.previousData,
+        updatedAt: Timestamp.now()
+      });
+      if (undoAction.timeoutId) clearTimeout(undoAction.timeoutId);
+      setUndoAction(null);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `shifts/${activeShiftId}/patients/${undoAction.id}`);
+    }
   };
 
   const deletePatient = async (id: string) => {
     if (!activeShiftId) return;
-    await deleteDoc(doc(db, `shifts/${activeShiftId}/patients`, id));
+    try {
+      await deleteDoc(doc(db, `shifts/${activeShiftId}/patients`, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `shifts/${activeShiftId}/patients/${id}`);
+    }
   };
 
   const completePatient = async (id: string) => {
@@ -176,56 +286,88 @@ export default function App() {
     const patient = patients.find(p => p.id === id);
     if (!patient) return;
     
-    await updateDoc(doc(db, `shifts/${activeShiftId}/patients`, id), {
-      isCompleted: !patient.isCompleted,
-      updatedAt: Timestamp.now()
-    });
+    try {
+      await updateDoc(doc(db, `shifts/${activeShiftId}/patients`, id), {
+        isCompleted: !patient.isCompleted,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `shifts/${activeShiftId}/patients/${id}`);
+    }
   };
 
   const resetPatientTimer = async (id: string) => {
     if (!activeShiftId) return;
-    await updateDoc(doc(db, `shifts/${activeShiftId}/patients`, id), {
-      lastAssessmentAt: Timestamp.now(),
-      updatedAt: Timestamp.now()
-    });
+    try {
+      await updateDoc(doc(db, `shifts/${activeShiftId}/patients`, id), {
+        lastAssessmentAt: Timestamp.now(),
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `shifts/${activeShiftId}/patients/${id}`);
+    }
   };
 
   const addTeamMember = async (member: Partial<TeamMember>) => {
     if (!activeShiftId) return;
-    await addDoc(collection(db, `shifts/${activeShiftId}/teamMembers`), member);
+    try {
+      await addDoc(collection(db, `shifts/${activeShiftId}/teamMembers`), member);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `shifts/${activeShiftId}/teamMembers`);
+    }
   };
 
   const removeTeamMember = async (id: string) => {
     if (!activeShiftId) return;
-    await deleteDoc(doc(db, `shifts/${activeShiftId}/teamMembers`, id));
+    try {
+      await deleteDoc(doc(db, `shifts/${activeShiftId}/teamMembers`, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `shifts/${activeShiftId}/teamMembers/${id}`);
+    }
   };
 
   const addMedCommCall = async (call: Partial<MedCommCall>) => {
     if (!activeShiftId) return;
-    await addDoc(collection(db, `shifts/${activeShiftId}/medCommCalls`), {
-      ...call,
-      callTime: Timestamp.now(),
-      createdAt: Timestamp.now()
-    });
-    setShowMedCommForm(false);
+    try {
+      await addDoc(collection(db, `shifts/${activeShiftId}/medCommCalls`), {
+        ...call,
+        callTime: Timestamp.now(),
+        createdAt: Timestamp.now()
+      });
+      setShowMedCommForm(false);
+    } catch (error) {
+      handleFirestoreError(error, OperationType.CREATE, `shifts/${activeShiftId}/medCommCalls`);
+    }
   };
 
   const updateMedCommCall = async (id: string, updates: Partial<MedCommCall>) => {
     if (!activeShiftId) return;
-    await updateDoc(doc(db, `shifts/${activeShiftId}/medCommCalls`, id), {
-      ...updates,
-      updatedAt: Timestamp.now()
-    });
+    try {
+      await updateDoc(doc(db, `shifts/${activeShiftId}/medCommCalls`, id), {
+        ...updates,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `shifts/${activeShiftId}/medCommCalls/${id}`);
+    }
   };
 
   const updateMedCommStatus = async (id: string, status: MedCommCall['status']) => {
     if (!activeShiftId) return;
-    await updateDoc(doc(db, `shifts/${activeShiftId}/medCommCalls`, id), { status });
+    try {
+      await updateDoc(doc(db, `shifts/${activeShiftId}/medCommCalls`, id), { status });
+    } catch (error) {
+      handleFirestoreError(error, OperationType.UPDATE, `shifts/${activeShiftId}/medCommCalls/${id}`);
+    }
   };
 
   const deleteMedCommCall = async (id: string) => {
     if (!activeShiftId) return;
-    await deleteDoc(doc(db, `shifts/${activeShiftId}/medCommCalls`, id));
+    try {
+      await deleteDoc(doc(db, `shifts/${activeShiftId}/medCommCalls`, id));
+    } catch (error) {
+      handleFirestoreError(error, OperationType.DELETE, `shifts/${activeShiftId}/medCommCalls/${id}`);
+    }
   };
 
   const convertToPatient = async (call: MedCommCall) => {
@@ -252,12 +394,16 @@ export default function App() {
       createdAt: Timestamp.now(),
       updatedAt: Timestamp.now()
     };
-    const patientRef = await addDoc(collection(db, `shifts/${activeShiftId}/patients`), newPatient);
-    await updateDoc(doc(db, `shifts/${activeShiftId}/medCommCalls`, call.id), { 
-      convertedToPatientId: patientRef.id,
-      status: 'arrived'
-    });
-    setActiveTab('board');
+    try {
+      const patientRef = await addDoc(collection(db, `shifts/${activeShiftId}/patients`), newPatient);
+      await updateDoc(doc(db, `shifts/${activeShiftId}/medCommCalls`, call.id), { 
+        convertedToPatientId: patientRef.id,
+        status: 'arrived'
+      });
+      setActiveTab('board');
+    } catch (error) {
+      handleFirestoreError(error, OperationType.WRITE, `shifts/${activeShiftId}`);
+    }
   };
 
   const seedDemoData = async () => {
@@ -341,6 +487,8 @@ export default function App() {
       activeTab={activeTab} 
       setActiveTab={setActiveTab} 
       onLogout={handleLogout}
+      onAddTeamMember={addTeamMember}
+      activeShiftId={activeShiftId}
     >
       <div className="space-y-6">
         {/* Shift Selector always visible at top of settings or if no shift active */}
@@ -376,6 +524,7 @@ export default function App() {
                 onCompletePatient={completePatient}
                 onResetTimer={resetPatientTimer}
                 onAddPatient={addPatient}
+                onAddTeamMember={addTeamMember}
                 colorBlindMode={colorBlindMode}
                 compactMode={compactMode}
                 twoColumnMode={twoColumnMode}
@@ -437,6 +586,67 @@ export default function App() {
               />
             )}
 
+            {activeTab === 'handoff' && (
+              <div className="bg-white dark:bg-gray-900 rounded-2xl shadow-sm border border-gray-200 dark:border-gray-800 p-6 transition-colors">
+                <div className="flex items-center justify-between mb-6">
+                  <div>
+                    <h2 className="text-xl font-black text-gray-900 dark:text-white tracking-tight">Shift Handoff</h2>
+                    <p className="text-sm text-gray-400 dark:text-gray-500 font-medium">Review and sign-out active patients</p>
+                  </div>
+                  <button 
+                    onClick={() => window.print()}
+                    className="px-4 py-2 bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 text-gray-700 dark:text-gray-300 rounded-xl text-sm font-bold transition-colors print:hidden"
+                  >
+                    Print Handoff
+                  </button>
+                </div>
+                
+                <div className="space-y-8">
+                  {['Staff', 'Work-up', 'ED Observation', 'Likely Admit', 'Likely Discharge', 'New'].map(status => {
+                    const statusPatients = patients.filter(p => p.status === status && !p.isCompleted);
+                    if (statusPatients.length === 0) return null;
+                    
+                    return (
+                      <div key={status} className="space-y-3">
+                        <h3 className="text-sm font-black text-gray-500 dark:text-gray-400 uppercase tracking-widest border-b border-gray-100 dark:border-gray-800 pb-2">
+                          {status} ({statusPatients.length})
+                        </h3>
+                        <div className="grid gap-3">
+                          {statusPatients.map(patient => (
+                            <div key={patient.id} className="p-4 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-800 flex flex-col md:flex-row gap-4 transition-colors">
+                              <div className="flex-1 space-y-2">
+                                <div className="flex items-center gap-2">
+                                  <span className="font-black text-lg text-gray-900 dark:text-white">{patient.room}</span>
+                                  <span className="text-gray-400 dark:text-gray-600 font-bold">·</span>
+                                  <span className="font-bold text-gray-700 dark:text-gray-300">{patient.initials}</span>
+                                  <span className="text-gray-400 dark:text-gray-600 font-bold">·</span>
+                                  <span className="text-sm text-gray-500 dark:text-gray-400">{patient.age}{patient.sex}</span>
+                                </div>
+                                <p className="text-sm font-medium text-gray-800 dark:text-gray-200"><span className="text-gray-400 dark:text-gray-500">CC:</span> {patient.chiefComplaint}</p>
+                              </div>
+                              <div className="flex-1 space-y-2">
+                                <div className="text-xs font-bold text-gray-500 dark:text-gray-400 uppercase tracking-wider">Pending Tasks</div>
+                                <div className="flex flex-wrap gap-2">
+                                  {Object.entries(patient.tasks).filter(([_, v]) => v === 'pending').map(([k]) => (
+                                    <span key={k} className="px-2 py-1 bg-yellow-100 dark:bg-yellow-900/30 text-yellow-800 dark:text-yellow-500 rounded-md text-xs font-bold capitalize">
+                                      {k}
+                                    </span>
+                                  ))}
+                                  {Object.entries(patient.tasks).filter(([_, v]) => v === 'pending').length === 0 && (
+                                    <span className="text-sm text-gray-400 dark:text-gray-500 italic">None</span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {activeTab === 'settings' && (
               <Settings 
                 onSeedData={seedDemoData} 
@@ -448,6 +658,8 @@ export default function App() {
                 onToggleCompactMode={setCompactMode}
                 twoColumnMode={twoColumnMode}
                 onToggleTwoColumnMode={setTwoColumnMode}
+                darkMode={darkMode}
+                onToggleDarkMode={setDarkMode}
                 onLogout={handleLogout}
                 user={user}
                 teamMembers={teamMembers}
@@ -457,11 +669,25 @@ export default function App() {
                 activeShiftId={activeShiftId}
                 onSelectShift={setActiveShiftId}
                 onCreateShift={createShift}
+                onDeleteShift={deleteShift}
               />
             )}
           </>
         )}
       </div>
+
+      {/* Undo Toast */}
+      {undoAction && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] bg-gray-900 dark:bg-gray-800 text-white px-4 py-3 rounded-xl shadow-2xl flex items-center gap-4 animate-in slide-in-from-bottom-5">
+          <span className="text-sm font-medium">{undoAction.message}</span>
+          <button 
+            onClick={handleUndo}
+            className="text-blue-400 hover:text-blue-300 font-bold text-sm uppercase tracking-wider bg-white/10 px-3 py-1.5 rounded-lg transition-colors"
+          >
+            Undo
+          </button>
+        </div>
+      )}
     </Layout>
   );
 }
