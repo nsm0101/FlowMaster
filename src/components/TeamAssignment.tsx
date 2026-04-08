@@ -18,11 +18,11 @@ interface TeamAssignmentProps {
 export const TeamAssignment: React.FC<TeamAssignmentProps> = ({ teamMembers, assignedIds, onAssign, onRemove }) => {
   const getRoleColor = (role: string) => {
     switch (role) {
-      case 'attending': return 'bg-purple-100 text-purple-700 border-purple-200';
-      case 'fellow': return 'bg-blue-100 text-blue-700 border-blue-200';
-      case 'resident': return 'bg-green-100 text-green-700 border-green-200';
-      case 'student': return 'bg-yellow-100 text-yellow-700 border-yellow-200';
-      default: return 'bg-gray-100 text-gray-700 border-gray-200';
+      case 'attending': return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800/50';
+      case 'fellow': return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50';
+      case 'resident': return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800/50';
+      case 'student': return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800/50';
+      default: return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-400 border-gray-200 dark:border-gray-700';
     }
   };
 
@@ -38,13 +38,13 @@ export const TeamAssignment: React.FC<TeamAssignmentProps> = ({ teamMembers, ass
               className={cn(
                 "flex items-center gap-2 px-3 py-1.5 rounded-full border text-xs font-bold transition-all shadow-sm",
                 isAssigned 
-                  ? "bg-blue-600 border-blue-700 text-white ring-2 ring-blue-200" 
-                  : "bg-white border-gray-200 text-gray-700 hover:bg-gray-50"
+                  ? "bg-blue-600 dark:bg-blue-700 border-blue-700 dark:border-blue-800 text-white ring-2 ring-blue-200 dark:ring-blue-900/50" 
+                  : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-700 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700/50"
               )}
             >
               <div className={cn(
-                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold",
-                isAssigned ? "bg-blue-500 text-white" : getRoleColor(member.role)
+                "w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold transition-colors",
+                isAssigned ? "bg-blue-500 dark:bg-blue-600 text-white" : getRoleColor(member.role)
               )}>
                 {member.initials}
               </div>

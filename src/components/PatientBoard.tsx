@@ -7,13 +7,13 @@ import React, { useState, useMemo } from 'react';
 import { Patient, TeamMember } from '../types';
 import { PatientCard } from './PatientCard';
 import { Search, Filter, SortAsc, SortDesc, User, Users, Clock, AlertCircle, Plus, LayoutGrid, List, ChevronDown, ChevronUp, X } from 'lucide-react';
-import { cn } from '../lib/utils';
+import { cn, getRoleColor } from '../lib/utils';
 import { DndContext, DragOverlay, useDraggable, useDroppable, DragEndEvent, TouchSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
 
 interface PatientBoardProps {
   patients: Patient[];
   teamMembers: TeamMember[];
-  onUpdatePatient: (id: string, updates: Partial<Patient>, isSwipe?: boolean) => void;
+  onUpdatePatient: (id: string, updates: Partial<Patient>) => void;
   onDeletePatient: (id: string) => void;
   onCompletePatient: (id: string) => void;
   onResetTimer: (id: string) => void;
@@ -22,9 +22,10 @@ interface PatientBoardProps {
   colorBlindMode?: boolean;
   compactMode?: boolean;
   twoColumnMode?: boolean;
+  darkMode?: boolean;
 }
 
-const DraggableTeamMember = ({ member }: { member: TeamMember }) => {
+const DraggableTeamMember = ({ member, onFilter }: { member: TeamMember, onFilter?: (id: string) => void }) => {
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
     id: `member-${member.id}`,
     data: { member }
@@ -34,29 +35,40 @@ const DraggableTeamMember = ({ member }: { member: TeamMember }) => {
     transform: `translate3d(${transform.x}px, ${transform.y}px, 0)`,
   } : undefined;
 
-  const roleColors = {
-    attending: 'bg-red-100 text-red-700 border-red-200',
-    fellow: 'bg-blue-100 text-blue-700 border-blue-200',
-    resident: 'bg-green-100 text-green-700 border-green-200',
-    student: 'bg-yellow-100 text-yellow-700 border-yellow-200',
-    nurse: 'bg-purple-100 text-purple-700 border-purple-200',
-    other: 'bg-gray-100 text-gray-700 border-gray-200'
-  };
-
   return (
     <div
       ref={setNodeRef}
       style={style}
       {...listeners}
       {...attributes}
+      onClick={(e) => {
+        if (!isDragging && onFilter) {
+          onFilter(member.id);
+        }
+      }}
       className={cn(
-        "w-10 h-10 rounded-full border-2 flex items-center justify-center text-xs font-black cursor-grab active:cursor-grabbing transition-all shadow-sm shrink-0",
-        roleColors[member.role],
+        "w-10 h-10 rounded-full border-2 flex flex-col items-center justify-center text-xs font-black cursor-grab active:cursor-grabbing transition-all shadow-sm shrink-0 overflow-hidden relative group",
+        getRoleColor(member.role),
         isDragging && "opacity-50 scale-110 shadow-lg"
       )}
       title={`${member.firstName} ${member.lastName} (${member.role})`}
     >
-      {member.initials}
+      {member.avatarUrl || member.emoji ? (
+        <div className="w-full h-full flex items-center justify-center bg-white dark:bg-gray-800">
+          {member.avatarUrl ? (
+            <img src={member.avatarUrl} alt={member.initials} className="w-full h-full object-cover" />
+          ) : (
+            <span className="text-xl">{member.emoji}</span>
+          )}
+        </div>
+      ) : (
+        member.initials
+      )}
+      {(member.avatarUrl || member.emoji) && (
+        <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[6px] text-white font-black py-0.5 opacity-0 group-hover:opacity-100 transition-opacity text-center">
+          {member.initials}
+        </div>
+      )}
     </div>
   );
 };
@@ -72,7 +84,8 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
   onAddTeamMember,
   colorBlindMode = false,
   compactMode = false,
-  twoColumnMode = false
+  twoColumnMode = false,
+  darkMode = false
 }) => {
   const [search, setSearch] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
@@ -93,41 +106,7 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
     }
   };
 
-  const groupedPatients = useMemo(() => {
-    if (filterProvider === 'all') return { all: filteredAndSortedPatients };
-    
-    // If a specific provider is selected, we still group them but only show that provider
-    // However, the user requested "Collapsible sections by provider selected (when filter is active all a (All Providers) button to clear the selection"
-    // This implies that when "All Providers" is selected, we might NOT group, or we group by ALL providers.
-    // Let's implement grouping by provider when a specific provider is NOT selected, OR just group by the selected provider.
-    // Wait, the request says: "Collpaseable sections by provider selected (when filter is active all a (All Providers) button to clear the selection"
-    // This means if filterProvider !== 'all', we show a section for that provider.
-    // Actually, it might mean we group by provider ALWAYS, or only when filtered.
-    // Let's group by provider if filterProvider !== 'all'.
-    
-    const groups: Record<string, Patient[]> = {};
-    filteredAndSortedPatients.forEach(p => {
-      if (p.assignedTeam.length === 0) {
-        if (!groups['unassigned']) groups['unassigned'] = [];
-        groups['unassigned'].push(p);
-      } else {
-        p.assignedTeam.forEach(providerId => {
-          if (!groups[providerId]) groups[providerId] = [];
-          // Avoid duplicates if a patient has multiple providers and we are showing all
-          if (!groups[providerId].find(existing => existing.id === p.id)) {
-             groups[providerId].push(p);
-          }
-        });
-      }
-    });
-    return groups;
-  }, [filteredAndSortedPatients, filterProvider]);
-
-  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
-
-  const toggleGroup = (groupId: string) => {
-    setCollapsedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
-  };
+  const filteredAndSortedPatients = useMemo(() => {
     let result = [...patients];
 
     // Search
@@ -188,6 +167,42 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
     return result;
   }, [patients, search, sortBy, sortOrder, filterProvider, filterStatus]);
 
+  const groupedPatients = useMemo(() => {
+    if (filterProvider === 'all') return { all: filteredAndSortedPatients };
+    
+    // If a specific provider is selected, we still group them but only show that provider
+    // However, the user requested "Collapsible sections by provider selected (when filter is active all a (All Providers) button to clear the selection"
+    // This implies that when "All Providers" is selected, we might NOT group, or we group by ALL providers.
+    // Let's implement grouping by provider when a specific provider is NOT selected, OR just group by the selected provider.
+    // Wait, the request says: "Collpaseable sections by provider selected (when filter is active all a (All Providers) button to clear the selection"
+    // This means if filterProvider !== 'all', we show a section for that provider.
+    // Actually, it might mean we group by provider ALWAYS, or only when filtered.
+    // Let's group by provider if filterProvider !== 'all'.
+    
+    const groups: Record<string, Patient[]> = {};
+    filteredAndSortedPatients.forEach(p => {
+      if (p.assignedTeam.length === 0) {
+        if (!groups['unassigned']) groups['unassigned'] = [];
+        groups['unassigned'].push(p);
+      } else {
+        p.assignedTeam.forEach(providerId => {
+          if (!groups[providerId]) groups[providerId] = [];
+          // Avoid duplicates if a patient has multiple providers and we are showing all
+          if (!groups[providerId].find(existing => existing.id === p.id)) {
+             groups[providerId].push(p);
+          }
+        });
+      }
+    });
+    return groups;
+  }, [filteredAndSortedPatients, filterProvider]);
+
+  const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
+
+  const toggleGroup = (groupId: string) => {
+    setCollapsedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
     const { active, over } = event;
     if (over && active.data.current) {
@@ -222,32 +237,32 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
       {/* Quick Add Modal */}
       {isQuickAddOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
-          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 animate-in zoom-in-95 duration-200">
+          <div className="bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-2xl shadow-2xl w-full max-w-sm p-6 space-y-4 animate-in zoom-in-95 duration-200 transition-colors">
             <div className="flex items-center justify-between">
-              <h3 className="text-lg font-black text-gray-900 tracking-tight">Quick Add Team</h3>
-              <button onClick={() => setIsQuickAddOpen(false)} className="p-2 hover:bg-gray-100 rounded-full transition-colors">
-                <X size={20} className="text-gray-400" />
+              <h3 className="text-lg font-black text-gray-900 dark:text-white tracking-tight">Quick Add Team</h3>
+              <button onClick={() => setIsQuickAddOpen(false)} className="p-2 hover:bg-gray-100 dark:hover:bg-gray-800 rounded-full transition-colors">
+                <X size={20} className="text-gray-400 dark:text-gray-500" />
               </button>
             </div>
 
             <form onSubmit={handleQuickAdd} className="space-y-4">
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">First Name</label>
+                  <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest px-1">First Name</label>
                   <input 
                     autoFocus
                     required
-                    className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full p-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                     placeholder="First"
                     value={quickAddData.firstName}
                     onChange={(e) => setQuickAddData({ ...quickAddData, firstName: e.target.value })}
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Last Name</label>
+                  <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest px-1">Last Name</label>
                   <input 
                     required
-                    className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full p-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                     placeholder="Last"
                     value={quickAddData.lastName}
                     onChange={(e) => setQuickAddData({ ...quickAddData, lastName: e.target.value })}
@@ -257,20 +272,20 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Initials</label>
+                  <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest px-1">Initials</label>
                   <input 
                     required
                     maxLength={3}
-                    className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none uppercase"
+                    className="w-full p-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none uppercase transition-colors"
                     placeholder="JD"
                     value={quickAddData.initials}
                     onChange={(e) => setQuickAddData({ ...quickAddData, initials: e.target.value.toUpperCase() })}
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Role</label>
+                  <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest px-1">Role</label>
                   <select 
-                    className="w-full p-2.5 bg-gray-50 border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                    className="w-full p-2.5 bg-gray-50 dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                     value={quickAddData.role}
                     onChange={(e) => setQuickAddData({ ...quickAddData, role: e.target.value as any })}
                   >
@@ -286,7 +301,7 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
 
               <button 
                 type="submit"
-                className="w-full py-3 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 active:scale-95"
+                className="w-full py-3 bg-blue-600 text-white rounded-xl font-black uppercase tracking-widest text-xs hover:bg-blue-700 transition-all shadow-lg shadow-blue-200 dark:shadow-none active:scale-95"
               >
                 Add Member
               </button>
@@ -296,37 +311,44 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
       )}
 
       <div className="space-y-4">
-        {/* Team Bar - Pinned */}
-        <div className="sticky top-10 md:top-12 z-40 bg-white/90 backdrop-blur-md py-1 border-b border-gray-100 -mx-4 px-4 shadow-sm flex items-center justify-between gap-0">
+        {/* Team Bar - Scrolling with patients */}
+        <div className="bg-white/90 dark:bg-gray-950/90 backdrop-blur-md py-1 border-b border-gray-100 dark:border-gray-800 -mx-4 px-4 shadow-sm flex items-center justify-between gap-0 transition-colors">
           <div className="flex-1 flex flex-col min-w-0">
             <div className="flex justify-center w-full">
               <div className="flex items-center gap-1 opacity-60">
-                <Users size={10} className="text-gray-400" />
-                <span className="text-[8px] font-black text-gray-400 uppercase tracking-widest whitespace-nowrap">Team</span>
+                <Users size={10} className="text-gray-400 dark:text-gray-500" />
+                <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest whitespace-nowrap">Team</span>
               </div>
             </div>
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1">
+            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 scroll-touch snap-x-mandatory">
               {teamMembers.map(m => (
-                <DraggableTeamMember key={m.id} member={m} />
+                <div key={m.id} className="snap-center">
+                  <DraggableTeamMember 
+                    member={m} 
+                    onFilter={(id) => setFilterProvider(id === filterProvider ? 'all' : id)} 
+                  />
+                </div>
               ))}
-              <button
-                onClick={() => setIsQuickAddOpen(true)}
-                className="w-10 h-10 rounded-full border-2 border-dashed border-gray-300 flex items-center justify-center text-gray-400 hover:text-blue-600 hover:border-blue-300 hover:bg-blue-50 transition-all shrink-0"
-                title="Quick Add Team Member"
-              >
-                <Plus size={16} />
-              </button>
+              <div className="snap-center">
+                <button
+                  onClick={() => setIsQuickAddOpen(true)}
+                  className="w-10 h-10 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center text-gray-400 dark:text-gray-600 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all shrink-0"
+                  title="Quick Add Team Member"
+                >
+                  <Plus size={16} />
+                </button>
+              </div>
               {teamMembers.length === 0 && (
-                <span className="text-[10px] text-gray-400 font-medium italic">No team members active</span>
+                <span className="text-[10px] text-gray-400 dark:text-gray-600 font-medium italic">No team members active</span>
               )}
             </div>
           </div>
 
-          <div className="w-px h-10 bg-gray-200 mx-2 shrink-0" />
+          <div className="w-px h-10 bg-gray-200 dark:bg-gray-800 mx-2 shrink-0 transition-colors" />
 
           <button 
             onClick={onAddPatient}
-            className="flex flex-col items-center justify-center min-w-[50px] h-10 text-blue-600 hover:bg-blue-50 rounded-xl transition-all shrink-0"
+            className="flex flex-col items-center justify-center min-w-[50px] h-10 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all shrink-0"
           >
             <Plus size={20} />
             <span className="text-[8px] font-black uppercase tracking-tighter">Add Patient</span>
@@ -339,17 +361,17 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
             <div className="flex items-center gap-4">
               {isSearchOpen ? (
                 <div className="relative animate-in slide-in-from-left-2 duration-200 min-w-[200px]">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
                   <input 
                     autoFocus
-                    className="w-full pl-9 pr-8 py-1.5 bg-white border border-gray-200 rounded-lg text-xs focus:ring-2 focus:ring-blue-500 outline-none shadow-sm"
+                    className="w-full pl-9 pr-8 py-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-colors"
                     placeholder="Search..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
                   />
                   <button 
                     onClick={() => { setSearch(''); setIsSearchOpen(false); }}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 dark:hover:text-gray-300"
                   >
                     <X size={14} />
                   </button>
@@ -357,7 +379,7 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
               ) : (
                 <button 
                   onClick={() => setIsSearchOpen(true)}
-                  className="text-[10px] font-black text-gray-400 hover:text-blue-600 tracking-widest uppercase"
+                  className="text-[10px] font-black text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 tracking-widest uppercase transition-colors"
                 >
                   SEARCH
                 </button>
@@ -367,7 +389,7 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
                 onClick={() => setIsSortOpen(!isSortOpen)}
                 className={cn(
                   "text-[10px] font-black tracking-widest uppercase transition-all",
-                  isSortOpen ? "text-blue-600" : "text-gray-400 hover:text-blue-600"
+                  isSortOpen ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
                 )}
               >
                 FILTER
@@ -442,6 +464,7 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
                 colorBlindMode={colorBlindMode}
                 compactMode={compactMode}
                 teamMembers={teamMembers}
+                darkMode={darkMode}
               />
             ))}
             {filteredAndSortedPatients.length === 0 && (
@@ -480,7 +503,7 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
                     <div className="flex items-center gap-2">
                       <div className={cn(
                         "w-8 h-8 rounded-full flex items-center justify-center text-xs font-black text-white",
-                        provider ? roleColors[provider.role] : "bg-gray-400 dark:bg-gray-600"
+                        provider ? getRoleColor(provider.role) : "bg-gray-400 dark:bg-gray-600"
                       )}>
                         {provider?.initials || '?'}
                       </div>
@@ -509,6 +532,7 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
                           colorBlindMode={colorBlindMode}
                           compactMode={compactMode}
                           teamMembers={teamMembers}
+                          darkMode={darkMode}
                         />
                       ))}
                       {groupPatients.length === 0 && (

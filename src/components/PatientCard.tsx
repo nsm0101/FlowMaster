@@ -32,21 +32,25 @@ import {
   Phone,
   MessageSquare,
   Bell,
-  Users2
+  Users2,
+  Plus
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useDroppable } from '@dnd-kit/core';
-import { motion, useMotionValue, useTransform } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
+import { RadialStatusMenu } from './RadialStatusMenu';
+import { RadialTeamMenu } from './RadialTeamMenu';
 
 interface PatientCardProps {
   patient: Patient;
-  onUpdate: (id: string, updates: Partial<Patient>, isSwipe?: boolean) => void;
+  onUpdate: (id: string, updates: Partial<Patient>) => void;
   onResetTimer: (id: string) => void;
   onDelete: (id: string) => void;
   onComplete: (id: string) => void;
   colorBlindMode?: boolean;
   compactMode?: boolean;
   teamMembers?: TeamMember[];
+  darkMode?: boolean;
 }
 
 export const PatientCard: React.FC<PatientCardProps> = ({ 
@@ -57,28 +61,19 @@ export const PatientCard: React.FC<PatientCardProps> = ({
   onComplete,
   colorBlindMode = false,
   compactMode = false,
-  teamMembers = []
+  teamMembers = [],
+  darkMode = false
 }) => {
   const [isExpanded, setIsExpanded] = useState(false);
   const [elapsed, setElapsed] = useState<number>(0);
-  const [showStatusMenu, setShowStatusMenu] = useState(false);
-  const [menuPosition, setMenuPosition] = useState<{ x: number, y: number } | null>(null);
-  const [lastTap, setLastTap] = useState(0);
+  const [radialMenuOpen, setRadialMenuOpen] = useState(false);
+  const [radialMenuPos, setRadialMenuPos] = useState({ x: 0, y: 0 });
+  const [teamMenuOpen, setTeamMenuOpen] = useState(false);
+  const [teamMenuPos, setTeamMenuPos] = useState({ x: 0, y: 0 });
 
   const { setNodeRef, isOver } = useDroppable({
     id: patient.id,
   });
-
-  // Swipe logic
-  const x = useMotionValue(0);
-  const isDark = document.documentElement.classList.contains('dark');
-  const background = useTransform(
-    x,
-    [-100, 0, 100],
-    isDark 
-      ? ["#4c1d95", "#1f2937", "#064e3b"] // Dark mode colors
-      : ["#fce4ec", "#ffffff", "#e8f5e9"] // Light mode colors
-  );
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -88,38 +83,32 @@ export const PatientCard: React.FC<PatientCardProps> = ({
     return () => clearInterval(interval);
   }, [patient.lastAssessmentAt]);
 
-  const handleDragEnd = (_: any, info: any) => {
-    const threshold = 80;
-    const velocityThreshold = 500;
-    if (info.offset.x > threshold || info.velocity.x > velocityThreshold) {
-      onUpdate(patient.id, { status: 'Discharge' }, true);
-    } else if (info.offset.x < -threshold || info.velocity.x < -velocityThreshold) {
-      onUpdate(patient.id, { status: 'Admit' }, true);
+  const handleStatusPointerDown = (e: React.PointerEvent) => {
+    // Ignore if clicking on interactive elements
+    const target = e.target as HTMLElement;
+    if (
+      target.closest('button') || 
+      target.closest('textarea') || 
+      target.closest('select') || 
+      target.closest('input') ||
+      target.closest('[data-interactive="true"]')
+    ) {
+      return;
     }
+
+    setRadialMenuPos({ x: e.clientX, y: e.clientY });
+    setRadialMenuOpen(true);
+    if (navigator.vibrate) navigator.vibrate(10);
   };
 
   const handleContextMenu = (e: React.MouseEvent) => {
     e.preventDefault();
-    if (window.innerWidth < 768) {
-      setMenuPosition(null);
-    } else {
-      setMenuPosition({ x: e.clientX, y: e.clientY });
-    }
-    setShowStatusMenu(true);
+    // Context menu now only for non-status actions if needed, 
+    // but user wants radial for status.
   };
 
   const handleCardClick = (e: React.MouseEvent) => {
-    const now = Date.now();
-    const DOUBLE_PRESS_DELAY = 300;
-    if (now - lastTap < DOUBLE_PRESS_DELAY) {
-      // Double tap
-      e.preventDefault();
-      handleContextMenu(e);
-    } else {
-      // Single tap
-      setIsExpanded(!isExpanded);
-    }
-    setLastTap(now);
+    setIsExpanded(!isExpanded);
   };
 
   const formatTime = (seconds: number) => {
@@ -129,6 +118,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
   };
 
   const toggleTask = (task: keyof Patient['tasks']) => {
+    if (navigator.vibrate) navigator.vibrate(5);
     const current = patient.tasks[task];
     let next: TaskState | MedsConsultState = 'off';
 
@@ -230,8 +220,8 @@ export const PatientCard: React.FC<PatientCardProps> = ({
         icon = (
           <div className="relative">
             <FileText size={size} />
-            <div className="absolute -bottom-1 -right-1 bg-white rounded-full p-0.5 shadow-sm border border-gray-100">
-              <Home size={size * 0.5} className="text-blue-600" />
+            <div className="absolute -bottom-1 -right-1 bg-white dark:bg-gray-800 rounded-full p-0.5 shadow-sm border border-gray-100 dark:border-gray-700 transition-colors">
+              <Home size={size * 0.5} className="text-blue-600 dark:text-blue-400" />
             </div>
           </div>
         ); 
@@ -274,7 +264,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
         icon = (
           <div className="flex items-center gap-0.5 relative">
             <StickyNote size={size} />
-            <span className="absolute -bottom-1 -right-1 text-[7px] font-black bg-white rounded px-0.5 border border-gray-100">A</span>
+            <span className="absolute -bottom-1 -right-1 text-[7px] font-black bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded px-0.5 border border-gray-100 dark:border-gray-700 transition-colors">A</span>
           </div>
         ); 
         break;
@@ -282,7 +272,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
         icon = (
           <div className="flex items-center gap-0.5 relative">
             <StickyNote size={size} />
-            <span className="absolute -bottom-1 -right-1 text-[7px] font-black bg-white rounded px-0.5 border border-gray-100">D</span>
+            <span className="absolute -bottom-1 -right-1 text-[7px] font-black bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded px-0.5 border border-gray-100 dark:border-gray-700 transition-colors">D</span>
           </div>
         ); 
         break;
@@ -320,19 +310,21 @@ export const PatientCard: React.FC<PatientCardProps> = ({
   return (
     <motion.div 
       ref={setNodeRef}
-      drag="x"
-      dragConstraints={{ left: 0, right: 0 }}
-      dragElastic={0.8}
-      dragDirectionLock
-      onDragEnd={handleDragEnd}
       animate={isGoodToGo ? {
         boxShadow: ["0px 0px 0px rgba(34, 197, 94, 0)", "0px 0px 30px rgba(34, 197, 94, 0.5)", "0px 0px 0px rgba(34, 197, 94, 0)"],
         transition: { repeat: Infinity, duration: 1.5 }
-      } : {}}
-      style={{ x, background }}
+      } : (patient.status === 'New' && !patient.isCompleted ? {
+        y: [0, -4, 0],
+        scale: [1, 1.005, 1],
+        transition: { 
+          y: { repeat: Infinity, duration: 3, ease: "easeInOut" },
+          scale: { repeat: Infinity, duration: 3, ease: "easeInOut" }
+        }
+      } : {})}
+      whileHover={{ y: -2, scale: 1.005, transition: { duration: 0.2 } }}
       onContextMenu={handleContextMenu}
       className={cn(
-        "group rounded-xl shadow-sm mb-4 transition-all relative touch-pan-y w-full max-w-full bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 overflow-visible",
+        "group rounded-xl shadow-sm mb-4 transition-all relative touch-pan-y w-full max-w-full bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 overflow-visible active:shadow-lg",
         getSeenBorderStyle(patient.seenState),
         patient.isPinned && "ring-2 ring-yellow-400 dark:ring-yellow-500",
         patient.isCompleted && "opacity-60 grayscale-[0.5]",
@@ -340,6 +332,32 @@ export const PatientCard: React.FC<PatientCardProps> = ({
         isGoodToGo && "border-green-500 dark:border-green-400 border-2"
       )}
     >
+      {/* Radial Team Assignment Menu */}
+      <RadialTeamMenu 
+        isOpen={teamMenuOpen}
+        onClose={() => setTeamMenuOpen(false)}
+        onSelect={(memberId) => {
+          if (!patient.assignedTeam.includes(memberId)) {
+            onUpdate(patient.id, { assignedTeam: [...patient.assignedTeam, memberId] });
+          }
+        }}
+        teamMembers={teamMembers}
+        centerX={teamMenuPos.x}
+        centerY={teamMenuPos.y}
+        darkMode={darkMode}
+      />
+
+      {/* Radial Status Menu */}
+      <RadialStatusMenu 
+        isOpen={radialMenuOpen}
+        onClose={() => setRadialMenuOpen(false)}
+        onSelect={(status) => onUpdate(patient.id, { status })}
+        currentStatus={patient.status}
+        centerX={radialMenuPos.x}
+        centerY={radialMenuPos.y}
+        darkMode={darkMode}
+      />
+
       {/* Top Status Gradient Background */}
       <div className={cn("absolute top-0 left-0 right-0 h-14 rounded-t-xl pointer-events-none opacity-40", getStatusGradient(patient.status))} />
 
@@ -386,89 +404,50 @@ export const PatientCard: React.FC<PatientCardProps> = ({
           <div 
             key={m.id}
             className={cn(
-              "w-9 h-9 rounded-full border-2 border-white dark:border-gray-900 flex items-center justify-center text-[9px] font-black shadow-lg transition-transform hover:scale-110 hover:z-40 relative",
+              "w-9 h-9 rounded-full border-2 border-white dark:border-gray-900 flex flex-col items-center justify-center text-[9px] font-black shadow-lg transition-transform hover:scale-110 hover:z-40 relative overflow-hidden",
               getRoleColor(m.role)
             )}
             title={`${m.firstName} ${m.lastName} (${m.role})`}
           >
-            {m.initials}
+            {m.avatarUrl || m.emoji ? (
+              <div className="w-full h-full flex items-center justify-center bg-white dark:bg-gray-800">
+                {m.avatarUrl ? (
+                  <img src={m.avatarUrl} alt={m.initials} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-lg">{m.emoji}</span>
+                )}
+              </div>
+            ) : (
+              m.initials
+            )}
+            {(m.avatarUrl || m.emoji) && (
+              <div className="absolute bottom-0 left-0 right-0 bg-black/60 text-[6px] text-white font-black py-0.5 text-center">
+                {m.initials}
+              </div>
+            )}
           </div>
         ))}
         {assignedMembers.length === 0 && (
-          <div className="w-9 h-9 rounded-full border-2 border-dashed border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-300 dark:text-gray-600 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow-sm">
-            <User size={12} />
-          </div>
+          <motion.button
+            whileTap={{ scale: 0.9 }}
+            onClick={(e) => {
+              e.stopPropagation();
+              setTeamMenuPos({ x: e.clientX, y: e.clientY });
+              setTeamMenuOpen(true);
+            }}
+            className="w-9 h-9 rounded-full border-2 border-dashed border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-300 dark:text-gray-600 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow-sm hover:text-blue-500 hover:border-blue-300 transition-colors"
+          >
+            <Plus size={16} />
+          </motion.button>
         )}
       </div>
 
-      {/* Quick Status Menu (Right Click / Long Press) */}
-      {showStatusMenu && (
         <div 
           className={cn(
-            "fixed inset-0 z-[100] flex",
-            menuPosition ? "" : "bg-black/20 backdrop-blur-sm items-center justify-center p-4 animate-in fade-in duration-200"
+            "flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4 relative z-10 touch-none",
+            compactMode ? "p-1.5" : "p-3"
           )}
-          onClick={(e) => {
-            e.stopPropagation();
-            setShowStatusMenu(false);
-          }}
-          onContextMenu={(e) => {
-            e.preventDefault();
-            setShowStatusMenu(false);
-          }}
         >
-          <div 
-            className={cn(
-              "bg-white dark:bg-gray-900 rounded-2xl shadow-2xl overflow-hidden animate-in zoom-in-95 duration-200 transition-colors",
-              menuPosition ? "w-64 border border-gray-200 dark:border-gray-800 absolute" : "w-full max-w-sm relative"
-            )}
-            style={menuPosition ? {
-              left: Math.min(menuPosition.x, window.innerWidth - 260),
-              top: Math.min(menuPosition.y, window.innerHeight - 320),
-            } : {}}
-            onClick={(e) => e.stopPropagation()}
-          >
-            <div className="p-4 border-b border-gray-100 dark:border-gray-800 flex items-center justify-between bg-gray-50/50 dark:bg-gray-800/50 transition-colors">
-              <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Quick Status Change</h3>
-              <button onClick={() => setShowStatusMenu(false)} className="p-1 hover:bg-gray-200 dark:hover:bg-gray-800 rounded-lg transition-colors">
-                <X size={18} className="text-gray-400 dark:text-gray-500" />
-              </button>
-            </div>
-            <div className="p-4 grid grid-cols-2 gap-3">
-              {['New', 'Staff', 'Work-up', 'ED Observation', 'Likely Discharge', 'Likely Admit'].map(s => (
-                <button
-                  key={s}
-                  onClick={() => { onUpdate(patient.id, { status: s as PatientStatus }); setShowStatusMenu(false); }}
-                  className={cn(
-                    "py-3 px-4 rounded-xl text-[11px] font-black uppercase tracking-wider transition-all border shadow-sm",
-                    patient.status === s 
-                      ? "bg-blue-900 dark:bg-blue-600 text-white border-blue-900 dark:border-blue-600 shadow-md scale-[0.98]" 
-                      : "bg-white dark:bg-gray-800 text-gray-600 dark:text-gray-300 border-gray-200 dark:border-gray-700 hover:bg-gray-50 dark:hover:bg-gray-700 hover:border-gray-300 dark:hover:border-gray-600"
-                  )}
-                >
-                  {s}
-                </button>
-              ))}
-            </div>
-            <div className="p-3 bg-gray-50 dark:bg-gray-800/50 flex justify-center transition-colors">
-              <button 
-                onClick={() => setShowStatusMenu(false)}
-                className="text-[10px] font-bold text-gray-400 dark:text-gray-500 uppercase tracking-widest hover:text-gray-600 dark:hover:text-gray-300 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      <div 
-        className={cn(
-          "cursor-pointer flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4 relative z-10",
-          compactMode ? "p-1.5" : "p-3"
-        )}
-        onClick={handleCardClick}
-      >
         {/* Left Section: Room & Initials */}
         <div className="flex items-center gap-3 md:gap-4 md:pl-8">
           {/* Overlapping Room Box - Top Left on Desktop */}
@@ -502,28 +481,48 @@ export const PatientCard: React.FC<PatientCardProps> = ({
               )}
             </div>
             
-            {/* Chief Complaint - Editable In Place */}
+            {/* Chief Complaint & Status Row */}
+            <div className="flex items-start gap-2 mt-1">
+              <textarea 
+                className={cn(
+                  "flex-1 bg-transparent border-none focus:ring-0 font-bold text-gray-500 dark:text-gray-400 resize-none no-scrollbar leading-tight",
+                  compactMode ? "text-[9px]" : "text-[11px]"
+                )}
+                rows={2}
+                placeholder="Chief Complaint..."
+                value={patient.chiefComplaint || ''}
+                onChange={(e) => onUpdate(patient.id, { chiefComplaint: e.target.value })}
+                onClick={(e) => e.stopPropagation()}
+              />
+              
+              <motion.div 
+                onPointerDown={handleStatusPointerDown}
+                whileTap={{ scale: 0.95 }}
+                className={cn(
+                  "flex-1 rounded-xl font-black uppercase tracking-wider border shadow-sm cursor-pointer active:brightness-90 transition-all flex items-center justify-center text-center", 
+                  compactMode ? "text-[8px] h-8" : "text-[10px] h-10",
+                  getStatusStyle(patient.status)
+                )}
+              >
+                {colorBlindMode && <span className="mr-1">{getStatusSymbol(patient.status)}</span>}
+                {patient.status}
+              </motion.div>
+            </div>
+
+            {/* Mobile Operational Notes - Shared space below */}
             <textarea 
               className={cn(
-                "w-full bg-transparent border-none focus:ring-0 font-bold text-gray-500 dark:text-gray-400 resize-none no-scrollbar mt-0.5 leading-tight",
+                "w-full md:hidden bg-gray-50/50 dark:bg-gray-800/30 rounded-lg p-1.5 border-none focus:ring-0 font-bold text-gray-800 dark:text-gray-200 resize-none no-scrollbar leading-tight mt-1",
                 compactMode ? "text-[9px]" : "text-[11px]"
               )}
               rows={2}
-              placeholder="Chief Complaint..."
-              value={patient.chiefComplaint || ''}
-              onChange={(e) => onUpdate(patient.id, { chiefComplaint: e.target.value })}
+              placeholder="Operational notes..."
+              value={patient.operationalNotes || ''}
+              onChange={(e) => onUpdate(patient.id, { operationalNotes: e.target.value })}
               onClick={(e) => e.stopPropagation()}
             />
 
             <div className="flex items-center gap-1.5 mt-0.5">
-              <div className={cn(
-                "px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider border shadow-sm w-fit", 
-                compactMode ? "text-[7px]" : "text-[9px]",
-                getStatusStyle(patient.status)
-              )}>
-                {colorBlindMode && <span className="mr-1">{getStatusSymbol(patient.status)}</span>}
-                {patient.status}
-              </div>
               {patient.workflowFlags?.boarding && (
                 <div className={cn(
                   "px-1.5 py-0.5 rounded-full font-black uppercase tracking-wider border shadow-sm w-fit bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800/50 flex items-center gap-1",
@@ -557,60 +556,111 @@ export const PatientCard: React.FC<PatientCardProps> = ({
           {/* Workup Toggles Row */}
           <div className="flex items-center gap-1 flex-wrap justify-start md:justify-end">
             {(['labs', 'imaging', 'meds', 'consult'] as const).map(task => (
-              <button
-                key={task}
+              <motion.button
+                key={`${task}-${patient.tasks[task]}`}
+                whileTap={{ scale: 0.85 }}
+                initial={patient.tasks[task] === 'complete' ? { scale: 1.2, filter: "brightness(1.5)" } : false}
+                animate={{ scale: 1, filter: "brightness(1)" }}
+                transition={{ type: "spring", stiffness: 400, damping: 10 }}
                 onClick={(e) => { e.stopPropagation(); toggleTask(task); }}
                 className={cn(
                   "rounded-xl border-2 flex items-center justify-center transition-all relative shadow-sm",
-                  compactMode ? "w-7 h-7" : "w-9 h-9",
+                  compactMode ? "w-10 h-10" : "w-12 h-12",
                   getTaskStyle(patient.tasks[task])
                 )}
                 title={task.charAt(0).toUpperCase() + task.slice(1)}
               >
-                {getTaskIcon(task, patient.tasks[task], compactMode ? 12 : 16)}
+                {getTaskIcon(task, patient.tasks[task], compactMode ? 16 : 22)}
                 {patient.tasks[task] === 'pending' && (
-                  <div className={cn("absolute -top-1 -right-1 bg-yellow-400 rounded-full border-2 border-white shadow-sm", compactMode ? "w-2 h-2" : "w-3 h-3")} />
+                  <motion.div 
+                    animate={{ scale: [1, 1.3, 1], opacity: [1, 0.7, 1] }}
+                    transition={{ repeat: Infinity, duration: 1.5 }}
+                    className={cn("absolute -top-1 -right-1 bg-yellow-400 rounded-full border-2 border-white shadow-sm", compactMode ? "w-3 h-3" : "w-4 h-4")} 
+                  />
                 )}
-              </button>
+                {patient.tasks[task] === 'complete' && (
+                  <motion.div
+                    initial={{ scale: 0, rotate: -45 }}
+                    animate={{ scale: 1, rotate: 0 }}
+                    transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                    className="absolute -top-1.5 -right-1.5 bg-green-500 rounded-full border-2 border-white shadow-md w-4 h-4 flex items-center justify-center"
+                  >
+                    <CheckCircle2 size={10} className="text-white" />
+                  </motion.div>
+                )}
+              </motion.button>
             ))}
 
-            <div className={cn("bg-gray-200 mx-1 self-center", compactMode ? "w-px h-5" : "w-px h-7")} />
+            <div className={cn("bg-gray-200 dark:bg-gray-700 mx-1.5 self-center", compactMode ? "w-px h-7" : "w-px h-9")} />
 
-            <button
+            <motion.button
+              key={`notes-${dischargeTasks.notes}`}
+              whileTap={{ scale: 0.85 }}
+              initial={dischargeTasks.notes === 'complete' ? { scale: 1.2, filter: "brightness(1.5)" } : false}
+              animate={{ scale: 1, filter: "brightness(1)" }}
+              transition={{ type: "spring", stiffness: 400, damping: 10 }}
               onClick={(e) => { e.stopPropagation(); toggleDischargeTask('notes'); }}
               className={cn(
                 "rounded-xl border-2 flex items-center justify-center transition-all relative shadow-sm",
-                compactMode ? "w-7 h-7" : "w-9 h-9",
+                compactMode ? "w-10 h-10" : "w-12 h-12",
                 getTaskStyle(dischargeTasks.notes as any)
               )}
               title="Notes"
             >
-              {getDischargeTaskIcon('notes', dischargeTasks.notes, compactMode ? 12 : 16)}
+              {getDischargeTaskIcon('notes', dischargeTasks.notes, compactMode ? 16 : 22)}
               {dischargeTasks.notes === 'pending' && (
-                <div className={cn("absolute -top-1 -right-1 bg-yellow-400 rounded-full border-2 border-white shadow-sm", compactMode ? "w-2 h-2" : "w-3 h-3")} />
+                <motion.div 
+                  animate={{ scale: [1, 1.3, 1], opacity: [1, 0.7, 1] }}
+                  transition={{ repeat: Infinity, duration: 1.5 }}
+                  className={cn("absolute -top-1 -right-1 bg-yellow-400 rounded-full border-2 border-white shadow-sm", compactMode ? "w-3 h-3" : "w-4 h-4")} 
+                />
               )}
-            </button>
+              {dischargeTasks.notes === 'complete' && (
+                <motion.div
+                  initial={{ scale: 0, rotate: -45 }}
+                  animate={{ scale: 1, rotate: 0 }}
+                  transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                  className="absolute -top-1.5 -right-1.5 bg-green-500 rounded-full border-2 border-white shadow-md w-4 h-4 flex items-center justify-center"
+                >
+                  <CheckCircle2 size={10} className="text-white" />
+                </motion.div>
+              )}
+            </motion.button>
           </div>
 
           {/* Secondary Toggles Row (Discharge / Admit / Obs) */}
-          <div className="flex items-center gap-1 flex-wrap justify-start md:justify-end">
+          <div className="flex items-center gap-1.5 flex-wrap justify-start md:justify-end">
             {patient.status === 'Discharge' && (
               <>
                 {(['instructions', 'rx', 'followUp'] as const).map(task => {
                   const state = dischargeTasks[task];
                   return (
-                    <button
-                      key={task}
+                    <motion.button
+                      key={`${task}-${state}`}
+                      whileTap={{ scale: 0.85 }}
+                      initial={state === 'complete' ? { scale: 1.2, filter: "brightness(1.5)" } : false}
+                      animate={{ scale: 1, filter: "brightness(1)" }}
+                      transition={{ type: "spring", stiffness: 400, damping: 10 }}
                       onClick={(e) => { e.stopPropagation(); toggleDischargeTask(task); }}
                       className={cn(
                         "rounded-xl border-2 flex items-center justify-center transition-all relative shadow-sm",
-                        compactMode ? "w-7 h-7" : "w-9 h-9",
+                        compactMode ? "w-10 h-10" : "w-12 h-12",
                         getTaskStyle(state as any)
                       )}
                       title={task.charAt(0).toUpperCase() + task.slice(1)}
                     >
-                      {getDischargeTaskIcon(task, state, compactMode ? 12 : 16)}
-                    </button>
+                      {getDischargeTaskIcon(task, state, compactMode ? 16 : 22)}
+                      {state === 'complete' && (
+                        <motion.div
+                          initial={{ scale: 0, rotate: -45 }}
+                          animate={{ scale: 1, rotate: 0 }}
+                          transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                          className="absolute -top-1.5 -right-1.5 bg-green-500 rounded-full border-2 border-white shadow-md w-4 h-4 flex items-center justify-center"
+                        >
+                          <CheckCircle2 size={10} className="text-white" />
+                        </motion.div>
+                      )}
+                    </motion.button>
                   );
                 })}
               </>
@@ -621,18 +671,32 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                 {(['familyUpdate', 'page', 'handoff', 'secureChat'] as const).map(task => {
                   const state = (patient.admitTasks || { familyUpdate: 'off', page: 'off', handoff: 'off', secureChat: 'off' })[task];
                   return (
-                    <button
-                      key={task}
+                    <motion.button
+                      key={`${task}-${state}`}
+                      whileTap={{ scale: 0.85 }}
+                      initial={state === 'complete' ? { scale: 1.2, filter: "brightness(1.5)" } : false}
+                      animate={{ scale: 1, filter: "brightness(1)" }}
+                      transition={{ type: "spring", stiffness: 400, damping: 10 }}
                       onClick={(e) => { e.stopPropagation(); toggleAdmitTask(task); }}
                       className={cn(
                         "rounded-xl border-2 flex items-center justify-center transition-all relative shadow-sm",
-                        compactMode ? "w-7 h-7" : "w-9 h-9",
+                        compactMode ? "w-10 h-10" : "w-12 h-12",
                         getTaskStyle(state as any)
                       )}
                       title={task.replace(/([A-Z])/g, ' $1').trim()}
                     >
-                      {getAdmitTaskIcon(task, state, compactMode ? 12 : 16)}
-                    </button>
+                      {getAdmitTaskIcon(task, state, compactMode ? 16 : 22)}
+                      {state === 'complete' && (
+                        <motion.div
+                          initial={{ scale: 0, rotate: -45 }}
+                          animate={{ scale: 1, rotate: 0 }}
+                          transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                          className="absolute -top-1.5 -right-1.5 bg-green-500 rounded-full border-2 border-white shadow-md w-4 h-4 flex items-center justify-center"
+                        >
+                          <CheckCircle2 size={10} className="text-white" />
+                        </motion.div>
+                      )}
+                    </motion.button>
                   );
                 })}
               </>
@@ -643,56 +707,77 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                 {(['obsAdmitNote', 'obsDCNote'] as const).map(task => {
                   const state = (patient.obsTasks || { obsAdmitNote: 'off', obsDCNote: 'off' })[task];
                   return (
-                    <button
-                      key={task}
+                    <motion.button
+                      key={`${task}-${state}`}
+                      whileTap={{ scale: 0.85 }}
+                      initial={state === 'complete' ? { scale: 1.2, filter: "brightness(1.5)" } : false}
+                      animate={{ scale: 1, filter: "brightness(1)" }}
+                      transition={{ type: "spring", stiffness: 400, damping: 10 }}
                       onClick={(e) => { e.stopPropagation(); toggleObsTask(task); }}
                       className={cn(
                         "rounded-xl border-2 flex items-center justify-center transition-all relative shadow-sm",
-                        compactMode ? "w-7 h-7" : "w-9 h-9",
+                        compactMode ? "w-10 h-10" : "w-12 h-12",
                         getTaskStyle(state as any)
                       )}
                       title={task.replace(/([A-Z])/g, ' $1').trim()}
                     >
-                      {getObsTaskIcon(task, state, compactMode ? 12 : 16)}
-                    </button>
+                      {getObsTaskIcon(task, state, compactMode ? 16 : 22)}
+                      {state === 'complete' && (
+                        <motion.div
+                          initial={{ scale: 0, rotate: -45 }}
+                          animate={{ scale: 1, rotate: 0 }}
+                          transition={{ type: "spring", stiffness: 500, damping: 15 }}
+                          className="absolute -top-1.5 -right-1.5 bg-green-500 rounded-full border-2 border-white shadow-md w-4 h-4 flex items-center justify-center"
+                        >
+                          <CheckCircle2 size={10} className="text-white" />
+                        </motion.div>
+                      )}
+                    </motion.button>
                   );
                 })}
               </>
             )}
           </div>
           
-          <div className="flex items-center justify-between md:justify-end gap-3 border-t border-gray-100 md:border-t-0 pt-1.5 md:pt-0">
-            <button 
+          <div className="flex items-center justify-between md:justify-end gap-4 border-t border-gray-100 md:border-t-0 pt-2 md:pt-0">
+            <motion.button 
+              whileTap={{ scale: 0.95 }}
               onClick={toggleSeenState}
               className={cn(
-                "bg-gray-100 hover:bg-gray-200 rounded-xl font-black text-gray-600 uppercase tracking-tight transition-all active:scale-95 flex items-center gap-1.5 shadow-sm",
-                compactMode ? "px-2 py-1 text-[8px]" : "px-3 py-1.5 text-[10px]"
+                "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl font-black text-gray-600 dark:text-gray-300 uppercase tracking-tight transition-all flex items-center gap-2 shadow-sm",
+                compactMode ? "px-3 py-2 text-[9px]" : "px-4 py-2.5 text-[11px]"
               )}
             >
-              <Edit2 size={compactMode ? 8 : 10} />
+              <Edit2 size={compactMode ? 10 : 14} />
               {patient.seenState}
-            </button>
+            </motion.button>
             
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-3">
               <div className={cn(
-                "flex items-center gap-2 bg-gray-50 rounded-xl border border-gray-100 shadow-sm",
-                compactMode ? "px-2 py-1" : "px-3 py-1.5"
+                "flex items-center gap-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm",
+                compactMode ? "px-3 py-2" : "px-4 py-2.5"
               )}>
-                <Clock size={compactMode ? 12 : 16} style={{ color: getTimerColor(elapsed) }} />
-                <span className={cn("font-black tabular-nums", compactMode ? "text-xs" : "text-sm")} style={{ color: getTimerColor(elapsed) }}>
+                <Clock size={compactMode ? 14 : 18} style={{ color: getTimerColor(elapsed) }} />
+                <span className={cn("font-black tabular-nums", compactMode ? "text-sm" : "text-base")} style={{ color: getTimerColor(elapsed) }}>
                   {formatTime(elapsed)}
                 </span>
               </div>
-              <button 
+              <motion.button 
+                whileTap={{ rotate: -180, scale: 0.8 }}
                 onClick={(e) => { e.stopPropagation(); onResetTimer(patient.id); }}
-                className="p-1.5 hover:bg-blue-50 rounded-full transition-colors text-gray-300 hover:text-blue-500 border border-transparent hover:border-blue-100"
+                className="p-2.5 hover:bg-blue-50 dark:hover:bg-blue-900/30 rounded-full transition-colors text-gray-300 dark:text-gray-600 hover:text-blue-500 dark:hover:text-blue-400 border border-transparent hover:border-blue-100 dark:hover:border-blue-800"
                 title="Reset Timer"
               >
-                <RotateCcw size={compactMode ? 12 : 14} />
-              </button>
-              <div className="p-1 bg-gray-50 rounded-lg md:hidden">
-                {isExpanded ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
-              </div>
+                <RotateCcw size={compactMode ? 16 : 20} />
+              </motion.button>
+              <motion.button 
+                whileTap={{ scale: 0.9 }}
+                onClick={(e) => { e.stopPropagation(); handleCardClick(e); }}
+                data-interactive="true"
+                className="p-1.5 bg-gray-50 dark:bg-gray-800 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors border border-gray-200 dark:border-gray-700"
+              >
+                {isExpanded ? <ChevronUp size={20} className="text-gray-400" /> : <ChevronDown size={20} className="text-gray-400" />}
+              </motion.button>
             </div>
           </div>
         </div>
@@ -714,17 +799,17 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-gray-400">Age</label>
+                  <label className="text-[9px] font-bold text-gray-400 dark:text-gray-500">Age</label>
                   <input 
-                    className="w-full text-xs p-2 border border-gray-200 rounded-lg"
+                    className="w-full text-xs p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                     value={patient.age || ''}
                     onChange={(e) => onUpdate(patient.id, { age: e.target.value })}
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-gray-400">Sex</label>
+                  <label className="text-[9px] font-bold text-gray-400 dark:text-gray-500">Sex</label>
                   <select 
-                    className="w-full text-xs p-2 border border-gray-200 rounded-lg bg-white"
+                    className="w-full text-xs p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                     value={patient.sex || 'M'}
                     onChange={(e) => onUpdate(patient.id, { sex: e.target.value as 'M' | 'F' | 'Other' })}
                   >
@@ -734,18 +819,18 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                   </select>
                 </div>
                 <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-gray-400">Room</label>
+                  <label className="text-[9px] font-bold text-gray-400 dark:text-gray-500">Room</label>
                   <input 
-                    className="w-full text-xs p-2 border border-gray-200 rounded-lg"
+                    className="w-full text-xs p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                     value={patient.room || ''}
                     onChange={(e) => onUpdate(patient.id, { room: e.target.value })}
                   />
                 </div>
               </div>
               <div className="mt-2 space-y-1">
-                <label className="text-[9px] font-bold text-gray-400">Chief Complaint</label>
+                <label className="text-[9px] font-bold text-gray-400 dark:text-gray-500">Chief Complaint</label>
                 <input 
-                  className="w-full text-xs p-2 border border-gray-200 rounded-lg"
+                  className="w-full text-xs p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                   value={patient.chiefComplaint || ''}
                   onChange={(e) => onUpdate(patient.id, { chiefComplaint: e.target.value })}
                 />
@@ -761,8 +846,8 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                   patient.assignedTeam.map(id => {
                     const member = teamMembers.find(m => m.id === id);
                     return (
-                      <div key={id} className="flex items-center gap-1 bg-white px-2 py-1 rounded-full border border-gray-200 text-xs shadow-sm">
-                        <div className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold", member ? getRoleColor(member.role) : "bg-blue-100 text-blue-600")}>
+                      <div key={id} className="flex items-center gap-1 bg-white dark:bg-gray-800 px-2 py-1 rounded-full border border-gray-200 dark:border-gray-700 text-xs text-gray-900 dark:text-white shadow-sm transition-colors">
+                        <div className={cn("w-4 h-4 rounded-full flex items-center justify-center text-[8px] font-bold", member ? getRoleColor(member.role) : "bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400")}>
                           {member?.initials || id.slice(0, 2).toUpperCase()}
                         </div>
                         <span>{member ? `${member.firstName} ${member.lastName}` : id}</span>
@@ -771,7 +856,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                             e.stopPropagation();
                             onUpdate(patient.id, { assignedTeam: patient.assignedTeam.filter(tid => tid !== id) });
                           }}
-                          className="ml-1 text-gray-400 hover:text-red-500"
+                          className="ml-1 text-gray-400 dark:text-gray-500 hover:text-red-500 dark:hover:text-red-400 transition-colors"
                         >
                           <X size={10} />
                         </button>
@@ -788,7 +873,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
               <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">OPERATIONAL NOTES</h4>
               <p className="text-[9px] text-red-500 font-bold mb-1.5 flex items-center gap-1">⚠️ DO NOT ENTER PHI</p>
               <textarea 
-                className="w-full text-xs p-2.5 border border-gray-200 rounded-xl bg-white h-24 focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm"
+                className="w-full text-xs p-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white h-24 focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm"
                 placeholder="Enter non-PHI notes here..."
                 value={patient.operationalNotes || ''}
                 onChange={(e) => onUpdate(patient.id, { operationalNotes: e.target.value })}
@@ -803,7 +888,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
           <div className="space-y-3">
               <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">STATUS CONTROL</h4>
               <select 
-                className="w-full text-xs p-2.5 border border-gray-200 rounded-xl bg-white focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm"
+                className="w-full text-xs p-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm"
                 value={patient.status}
                 onChange={(e) => onUpdate(patient.id, { status: e.target.value as any })}
               >
@@ -825,52 +910,56 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                 className={cn(
                   "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all text-xs font-bold",
                   patient.workflowFlags?.boarding 
-                    ? "bg-red-50 border-red-200 text-red-700" 
-                    : "bg-white border-gray-200 text-gray-600 hover:bg-gray-50"
+                    ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-400" 
+                    : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
                 )}
               >
                 <div className="flex items-center gap-2">
-                  <Bed size={14} className={patient.workflowFlags?.boarding ? "text-red-500" : "text-gray-400"} />
+                  <Bed size={14} className={patient.workflowFlags?.boarding ? "text-red-500 dark:text-red-400" : "text-gray-400 dark:text-gray-500"} />
                   <span>Boarding Status</span>
                 </div>
                 <div className={cn(
                   "w-8 h-4 rounded-full relative transition-colors",
-                  patient.workflowFlags?.boarding ? "bg-red-500" : "bg-gray-200"
+                  patient.workflowFlags?.boarding ? "bg-red-500 dark:bg-red-600" : "bg-gray-200 dark:bg-gray-700"
                 )}>
                   <div className={cn(
-                    "absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all",
+                    "absolute top-0.5 w-3 h-3 bg-white dark:bg-gray-200 rounded-full transition-all",
                     patient.workflowFlags?.boarding ? "left-[18px]" : "left-0.5"
                   )} />
                 </div>
               </button>
             </div>
 
-            <div className="pt-4 flex flex-wrap gap-2 justify-between items-center">
+            <div className="pt-4 flex flex-wrap gap-3 justify-between items-center">
               <div className="flex gap-2">
-                <button 
+                <motion.button 
+                  whileTap={{ scale: 0.95 }}
                   onClick={(e) => { e.stopPropagation(); onComplete(patient.id); }}
                   className={cn(
-                    "flex items-center gap-2 px-3 py-2 rounded-xl text-[10px] font-bold transition-all",
-                    patient.isCompleted ? "bg-green-100 text-green-700 border border-green-200" : "bg-green-600 text-white border border-green-700 shadow-sm hover:bg-green-700"
+                    "flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md",
+                    patient.isCompleted 
+                      ? "bg-green-100 text-green-700 border border-green-200" 
+                      : "bg-green-600 text-white border border-green-700 hover:bg-green-700 active:bg-green-800"
                   )}
                 >
-                  <CheckCircle2 size={12} />
+                  <CheckCircle2 size={16} />
                   {patient.isCompleted ? 'Re-open' : 'Complete Encounter'}
-                </button>
+                </motion.button>
               </div>
               
-              <button 
+              <motion.button 
+                whileTap={{ scale: 0.95 }}
                 onClick={(e) => {
                   e.stopPropagation();
                   if (confirm('Are you sure you want to delete this patient? This action cannot be undone.')) {
                     onDelete(patient.id);
                   }
                 }}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-[10px] font-bold text-red-500 hover:bg-red-50 transition-colors border border-transparent hover:border-red-100"
+                className="flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors border border-transparent hover:border-red-100 dark:hover:border-red-800/50"
               >
-                <X size={12} />
+                <X size={16} />
                 Delete Patient
-              </button>
+              </motion.button>
             </div>
         </div>
       )}

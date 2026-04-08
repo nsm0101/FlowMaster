@@ -4,7 +4,8 @@
  */
 
 import React from 'react';
-import { Settings as SettingsIcon, ShieldAlert, Database, Trash2, RefreshCw, Info, Eye, LogOut, User, Users, Calendar } from 'lucide-react';
+import { Settings as SettingsIcon, ShieldAlert, Database, Trash2, RefreshCw, Info, Eye, LogOut, User, Users, Calendar, Sun, Moon } from 'lucide-react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { TeamMember, Shift } from '../types';
 import { TeamSetup } from './TeamSetup';
@@ -24,6 +25,7 @@ interface SettingsProps {
   onToggleDarkMode: (enabled: boolean) => void;
   onLogout: () => void;
   user: any;
+  onUpdateProfile: (updates: { displayName?: string, photoURL?: string }) => void;
   teamMembers: TeamMember[];
   onAddTeamMember: (member: Omit<TeamMember, 'id'>) => void;
   onRemoveTeamMember: (id: string) => void;
@@ -102,18 +104,23 @@ export const Settings: React.FC<SettingsProps> = ({
                 <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Color-Blind Mode</p>
                 <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Use patterns and symbols for status</p>
               </div>
-              <button 
+              <motion.button 
+                whileTap={{ scale: 0.9 }}
                 onClick={() => onToggleColorBlindMode(!colorBlindMode)}
                 className={cn(
-                  "w-12 h-6 rounded-full transition-all relative",
+                  "w-12 h-6 rounded-full transition-all relative flex items-center px-1 shadow-inner",
                   colorBlindMode ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"
                 )}
               >
-                <div className={cn(
-                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  colorBlindMode ? "left-7" : "left-1"
-                )} />
-              </button>
+                <motion.div 
+                  layout
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className={cn(
+                    "w-4 h-4 bg-white rounded-full shadow-md",
+                    colorBlindMode ? "ml-auto" : "ml-0"
+                  )}
+                />
+              </motion.button>
             </div>
 
             <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between transition-colors">
@@ -121,18 +128,23 @@ export const Settings: React.FC<SettingsProps> = ({
                 <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Compact Mode</p>
                 <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Condense patient cards for more info</p>
               </div>
-              <button 
+              <motion.button 
+                whileTap={{ scale: 0.9 }}
                 onClick={() => onToggleCompactMode(!compactMode)}
                 className={cn(
-                  "w-12 h-6 rounded-full transition-all relative",
+                  "w-12 h-6 rounded-full transition-all relative flex items-center px-1 shadow-inner",
                   compactMode ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"
                 )}
               >
-                <div className={cn(
-                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  compactMode ? "left-7" : "left-1"
-                )} />
-              </button>
+                <motion.div 
+                  layout
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className={cn(
+                    "w-4 h-4 bg-white rounded-full shadow-md",
+                    compactMode ? "ml-auto" : "ml-0"
+                  )}
+                />
+              </motion.button>
             </div>
 
             <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between transition-colors">
@@ -140,18 +152,23 @@ export const Settings: React.FC<SettingsProps> = ({
                 <p className="text-xs font-bold text-gray-800 dark:text-gray-200">2-Column Layout</p>
                 <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Split board into two columns</p>
               </div>
-              <button 
+              <motion.button 
+                whileTap={{ scale: 0.9 }}
                 onClick={() => onToggleTwoColumnMode(!twoColumnMode)}
                 className={cn(
-                  "w-12 h-6 rounded-full transition-all relative",
+                  "w-12 h-6 rounded-full transition-all relative flex items-center px-1 shadow-inner",
                   twoColumnMode ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"
                 )}
               >
-                <div className={cn(
-                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  twoColumnMode ? "left-7" : "left-1"
-                )} />
-              </button>
+                <motion.div 
+                  layout
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className={cn(
+                    "w-4 h-4 bg-white rounded-full shadow-md",
+                    twoColumnMode ? "ml-auto" : "ml-0"
+                  )}
+                />
+              </motion.button>
             </div>
 
             <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between transition-colors">
@@ -159,18 +176,51 @@ export const Settings: React.FC<SettingsProps> = ({
                 <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Dark Mode</p>
                 <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Use dark theme for low light</p>
               </div>
-              <button 
+              <motion.button 
+                whileTap={{ scale: 0.9 }}
                 onClick={() => onToggleDarkMode(!darkMode)}
                 className={cn(
-                  "w-12 h-6 rounded-full transition-all relative",
+                  "w-14 h-7 rounded-full transition-all relative flex items-center px-1 shadow-inner",
                   darkMode ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"
                 )}
               >
-                <div className={cn(
-                  "absolute top-1 w-4 h-4 bg-white rounded-full transition-all",
-                  darkMode ? "left-7" : "left-1"
-                )} />
-              </button>
+                <motion.div 
+                  layout
+                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
+                  className={cn(
+                    "w-5 h-5 bg-white rounded-full shadow-md flex items-center justify-center z-10",
+                    darkMode ? "ml-auto" : "ml-0"
+                  )}
+                >
+                  <AnimatePresence mode="wait">
+                    {darkMode ? (
+                      <motion.div
+                        key="moon"
+                        initial={{ scale: 0, rotate: -90 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        exit={{ scale: 0, rotate: 90 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <Moon size={10} className="text-blue-600" />
+                      </motion.div>
+                    ) : (
+                      <motion.div
+                        key="sun"
+                        initial={{ scale: 0, rotate: 90 }}
+                        animate={{ scale: 1, rotate: 0 }}
+                        exit={{ scale: 0, rotate: -90 }}
+                        transition={{ duration: 0.2 }}
+                      >
+                        <Sun size={10} className="text-yellow-500" />
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </motion.div>
+                <div className="absolute inset-0 flex items-center justify-between px-1.5 pointer-events-none">
+                  <Sun size={10} className={cn("transition-opacity", darkMode ? "opacity-40" : "opacity-0")} />
+                  <Moon size={10} className={cn("transition-opacity", darkMode ? "opacity-0" : "opacity-40")} />
+                </div>
+              </motion.button>
             </div>
           </div>
         </div>
@@ -213,24 +263,68 @@ export const Settings: React.FC<SettingsProps> = ({
         {/* Account Section */}
         <div className="space-y-4">
           <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
-            <User size={14} /> Account
+            <User size={14} /> Account Details
           </h3>
-          <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between transition-colors">
-            <div className="flex items-center gap-3">
-              <div className="w-10 h-10 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400">
-                <User size={20} />
+          <div className="p-6 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl space-y-6 transition-colors">
+            <div className="flex flex-col md:flex-row items-center gap-6">
+              <div className="relative group">
+                <div className="w-24 h-24 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center text-blue-600 dark:text-blue-400 overflow-hidden border-4 border-white dark:border-gray-800 shadow-xl">
+                  {user?.photoURL ? (
+                    user.photoURL.length < 4 ? (
+                      <span className="text-4xl">{user.photoURL}</span>
+                    ) : (
+                      <img src={user.photoURL} alt="Avatar" className="w-full h-full object-cover" />
+                    )
+                  ) : (
+                    <User size={40} />
+                  )}
+                </div>
+                <div className="absolute bottom-0 right-0 p-2 bg-blue-600 text-white rounded-full shadow-lg hover:bg-blue-700 transition-all scale-90 group-hover:scale-100">
+                  <SettingsIcon size={14} />
+                </div>
               </div>
-              <div>
-                <p className="text-xs font-bold text-gray-800 dark:text-gray-200">{user?.email}</p>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium tracking-tight">Authenticated Provider</p>
+              
+              <div className="flex-1 space-y-4 w-full">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest px-1">Display Name</label>
+                    <input 
+                      className="w-full p-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
+                      value={user?.displayName || ''}
+                      placeholder="Enter name"
+                      onChange={(e) => onUpdateProfile({ displayName: e.target.value })}
+                    />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest px-1">Avatar URL / Emoji</label>
+                    <input 
+                      className="w-full p-2.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-xl text-sm text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
+                      value={user?.photoURL || ''}
+                      placeholder="URL or Emoji"
+                      onChange={(e) => onUpdateProfile({ photoURL: e.target.value })}
+                    />
+                  </div>
+                </div>
               </div>
             </div>
-            <button 
-              onClick={onLogout}
-              className="px-4 py-2 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-800/50 text-red-600 dark:text-red-400 rounded-xl text-xs font-black hover:bg-red-50 dark:hover:bg-red-900/20 transition-all flex items-center gap-2 shadow-sm"
-            >
-              <LogOut size={14} /> Logout
-            </button>
+
+            <div className="flex items-center justify-between pt-4 border-t border-gray-200 dark:border-gray-700">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 rounded-full bg-gray-200 dark:bg-gray-700 flex items-center justify-center text-gray-500 dark:text-gray-400">
+                  <ShieldAlert size={16} />
+                </div>
+                <div>
+                  <p className="text-[10px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest">Email Address</p>
+                  <p className="text-xs font-bold text-gray-800 dark:text-gray-200">{user?.email}</p>
+                </div>
+              </div>
+              <button 
+                onClick={onLogout}
+                className="px-4 py-2 bg-white dark:bg-gray-800 border border-red-200 dark:border-red-800/50 text-red-600 dark:text-red-400 rounded-xl text-xs font-black hover:bg-red-50 dark:hover:bg-red-900/20 transition-all flex items-center gap-2 shadow-sm"
+              >
+                <LogOut size={14} /> Logout
+              </button>
+            </div>
           </div>
         </div>
 

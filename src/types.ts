@@ -29,6 +29,7 @@ export interface TeamMember {
   initials: string;
   role: Role;
   avatarUrl?: string;
+  emoji?: string;
 }
 
 export interface Patient {
@@ -116,6 +117,7 @@ export interface MedCommCall {
 export interface Shift {
   id: string;
   name: string;
+  sessionId: string;
   startTime: Timestamp;
   endTime?: Timestamp;
   isActive: boolean;

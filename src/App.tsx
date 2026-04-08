@@ -31,7 +31,9 @@ import { MedCommForm } from './components/MedCommForm';
 import { TeamSetup } from './components/TeamSetup';
 import { ShiftSelector } from './components/ShiftSelector';
 import { Settings } from './components/Settings';
+import { JoinSession } from './components/JoinSession';
 import { Plus, Loader2, AlertCircle } from 'lucide-react';
+import { updateProfile } from 'firebase/auth';
 
 export default function App() {
   const [user, setUser] = useState<User | null>(null);
@@ -89,8 +91,17 @@ export default function App() {
 
   // Auth State
   useEffect(() => {
+    // Safety timeout to prevent infinite loading if Firebase hangs
+    const safetyTimeout = setTimeout(() => {
+      setLoading(false);
+      console.warn("Auth initialization timed out, proceeding to login screen.");
+    }, 5000);
+
     const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      clearTimeout(safetyTimeout);
       setUser(u);
+      setLoading(false);
+      
       if (u) {
         // Ensure user document exists
         const userRef = doc(db, 'users', u.uid);
@@ -107,9 +118,18 @@ export default function App() {
           // (e.g. due to missing Firestore rules on a new project)
         }
       }
-      setLoading(false);
+      
+      // Hide splash screen
+      const splash = document.getElementById('splash');
+      if (splash) {
+        splash.style.opacity = '0';
+        setTimeout(() => splash.remove(), 500);
+      }
     });
-    return () => unsubscribe();
+    return () => {
+      unsubscribe();
+      clearTimeout(safetyTimeout);
+    };
   }, []);
 
   // Shifts Listener
@@ -168,8 +188,10 @@ export default function App() {
 
   const createShift = async (name: string) => {
     if (!user) return;
+    const sessionId = Math.random().toString(36).substring(2, 8).toUpperCase();
     const newShift = {
       name,
+      sessionId,
       startTime: Timestamp.now(),
       isActive: true,
       createdBy: user.uid
@@ -179,6 +201,37 @@ export default function App() {
       setActiveShiftId(docRef.id);
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'shifts');
+    }
+  };
+
+  const joinSession = async (sessionId: string) => {
+    if (!user) return;
+    const q = query(collection(db, 'shifts'), where('sessionId', '==', sessionId.toUpperCase()));
+    const snapshot = await getDocs(q);
+    if (!snapshot.empty) {
+      const shiftId = snapshot.docs[0].id;
+      setActiveShiftId(shiftId);
+      localStorage.setItem('activeShiftId', shiftId);
+      return true;
+    }
+    return false;
+  };
+
+  const handleUpdateProfile = async (updates: { displayName?: string, photoURL?: string }) => {
+    if (!user) return;
+    try {
+      await updateProfile(user, updates);
+      // Force re-render by updating user state
+      setUser({ ...user, ...updates } as User);
+      
+      // Also update firestore user doc
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        ...updates,
+        updatedAt: Timestamp.now()
+      });
+    } catch (error) {
+      console.error("Failed to update profile:", error);
     }
   };
 
@@ -226,33 +279,14 @@ export default function App() {
     }
   };
 
-  const updatePatient = async (id: string, updates: Partial<Patient>, isSwipe: boolean = false) => {
+  const updatePatient = async (id: string, updates: Partial<Patient>) => {
     if (!activeShiftId) return;
     
-    const patient = patients.find(p => p.id === id);
-    const previousData: Partial<Patient> = {};
-    if (patient && isSwipe) {
-      for (const key in updates) {
-        previousData[key as keyof Patient] = patient[key as keyof Patient] as any;
-      }
-    }
-
     try {
       await updateDoc(doc(db, `shifts/${activeShiftId}/patients`, id), {
         ...updates,
         updatedAt: Timestamp.now()
       });
-
-      if (isSwipe && patient) {
-        if (undoAction?.timeoutId) clearTimeout(undoAction.timeoutId);
-        const timeoutId = setTimeout(() => setUndoAction(null), 5000);
-        setUndoAction({
-          id,
-          previousData,
-          message: `Status changed to ${updates.status}`,
-          timeoutId
-        });
-      }
     } catch (error) {
       handleFirestoreError(error, OperationType.UPDATE, `shifts/${activeShiftId}/patients/${id}`);
     }
@@ -502,17 +536,12 @@ export default function App() {
         )}
 
         {!activeShiftId ? (
-          <div className="py-20 text-center space-y-4">
-            <div className="w-20 h-20 bg-blue-50 rounded-3xl flex items-center justify-center text-blue-600 mx-auto">
-              <Plus size={40} />
-            </div>
-            <div className="space-y-2">
-              <h3 className="text-xl font-black text-gray-900 tracking-tight">No Active Shift</h3>
-              <p className="text-sm text-gray-400 font-medium max-w-xs mx-auto">
-                Create a new shift or select an existing one from the list above to start managing patients.
-              </p>
-            </div>
-          </div>
+          <JoinSession 
+            onJoin={joinSession} 
+            onCreate={createShift}
+            shifts={shifts}
+            onSelect={setActiveShiftId}
+          />
         ) : (
           <>
             {activeTab === 'board' && (
@@ -528,6 +557,7 @@ export default function App() {
                 colorBlindMode={colorBlindMode}
                 compactMode={compactMode}
                 twoColumnMode={twoColumnMode}
+                darkMode={darkMode}
               />
             )}
 
@@ -662,6 +692,7 @@ export default function App() {
                 onToggleDarkMode={setDarkMode}
                 onLogout={handleLogout}
                 user={user}
+                onUpdateProfile={handleUpdateProfile}
                 teamMembers={teamMembers}
                 onAddTeamMember={addTeamMember}
                 onRemoveTeamMember={removeTeamMember}
