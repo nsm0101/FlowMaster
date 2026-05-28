@@ -22,7 +22,8 @@
         "age": { "type": "string" },
         "room": { "type": "string" },
         "status": { "type": "string", "enum": ["New", "Staff", "Work-up", "ED Observation", "Likely Discharge", "Likely Admit", "Discharge", "Admit"] },
-        "seenState": { "type": "string", "enum": ["To Be Seen", "Seen by Fellow", "Seen by Attending"] },
+        "fellowSeen": { "type": "boolean" },
+        "attendingSeen": { "type": "boolean" },
         "assignedTeam": { "type": "array", "items": { "type": "string" } },
         "tasks": { "type": "object" },
         "workflowFlags": { "type": "object" },
@@ -31,7 +32,7 @@
         "createdAt": { "type": "object", "format": "timestamp" },
         "updatedAt": { "type": "object", "format": "timestamp" }
       },
-      "required": ["initials", "age", "room", "status", "seenState", "lastAssessmentAt"]
+      "required": ["initials", "age", "room", "status", "fellowSeen", "attendingSeen", "lastAssessmentAt"]
     },
     "TeamMember": {
       "title": "Team Member",

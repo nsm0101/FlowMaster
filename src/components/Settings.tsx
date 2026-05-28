@@ -4,7 +4,7 @@
  */
 
 import React from 'react';
-import { Settings as SettingsIcon, ShieldAlert, Database, Trash2, RefreshCw, Info, Eye, LogOut, User, Users, Calendar, Sun, Moon } from 'lucide-react';
+import { Settings as SettingsIcon, ShieldAlert, Database, Trash2, RefreshCw, Info, Eye, LogOut, User, Users, Calendar, Sun, Moon, Monitor, Activity } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn } from '../lib/utils';
 import { TeamMember, Shift } from '../types';
@@ -15,19 +15,17 @@ interface SettingsProps {
   onSeedData: () => void;
   onClearData: () => void;
   isLoading: boolean;
-  colorBlindMode: boolean;
-  onToggleColorBlindMode: (enabled: boolean) => void;
   compactMode: boolean;
   onToggleCompactMode: (enabled: boolean) => void;
   twoColumnMode: boolean;
   onToggleTwoColumnMode: (enabled: boolean) => void;
-  darkMode: boolean;
-  onToggleDarkMode: (enabled: boolean) => void;
+  theme: 'light' | 'dark' | 'system';
+  onThemeChange: (theme: 'light' | 'dark' | 'system') => void;
   onLogout: () => void;
   user: any;
   onUpdateProfile: (updates: { displayName?: string, photoURL?: string }) => void;
   teamMembers: TeamMember[];
-  onAddTeamMember: (member: Omit<TeamMember, 'id'>) => void;
+  onAddTeamMember: (member: Partial<TeamMember>) => void;
   onRemoveTeamMember: (id: string) => void;
   shifts: Shift[];
   activeShiftId: string | null;
@@ -40,16 +38,15 @@ export const Settings: React.FC<SettingsProps> = ({
   onSeedData, 
   onClearData, 
   isLoading, 
-  colorBlindMode, 
-  onToggleColorBlindMode,
-  compactMode,
+  compactMode, 
   onToggleCompactMode,
   twoColumnMode,
   onToggleTwoColumnMode,
-  darkMode,
-  onToggleDarkMode,
+  theme,
+  onThemeChange,
   onLogout,
   user,
+  onUpdateProfile,
   teamMembers,
   onAddTeamMember,
   onRemoveTeamMember,
@@ -98,31 +95,7 @@ export const Settings: React.FC<SettingsProps> = ({
             <Eye size={14} /> Display & Accessibility
           </h3>
           
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between transition-colors">
-              <div className="space-y-1">
-                <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Color-Blind Mode</p>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Use patterns and symbols for status</p>
-              </div>
-              <motion.button 
-                whileTap={{ scale: 0.9 }}
-                onClick={() => onToggleColorBlindMode(!colorBlindMode)}
-                className={cn(
-                  "w-12 h-6 rounded-full transition-all relative flex items-center px-1 shadow-inner",
-                  colorBlindMode ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"
-                )}
-              >
-                <motion.div 
-                  layout
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className={cn(
-                    "w-4 h-4 bg-white rounded-full shadow-md",
-                    colorBlindMode ? "ml-auto" : "ml-0"
-                  )}
-                />
-              </motion.button>
-            </div>
-
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between transition-colors">
               <div className="space-y-1">
                 <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Compact Mode</p>
@@ -149,8 +122,8 @@ export const Settings: React.FC<SettingsProps> = ({
 
             <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between transition-colors">
               <div className="space-y-1">
-                <p className="text-xs font-bold text-gray-800 dark:text-gray-200">2-Column Layout</p>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Split board into two columns</p>
+                <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Multi-Column Layout</p>
+                <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Grid view for large screens</p>
               </div>
               <motion.button 
                 whileTap={{ scale: 0.9 }}
@@ -171,56 +144,45 @@ export const Settings: React.FC<SettingsProps> = ({
               </motion.button>
             </div>
 
-            <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl flex items-center justify-between transition-colors">
-              <div className="space-y-1">
-                <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Dark Mode</p>
-                <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Use dark theme for low light</p>
-              </div>
-              <motion.button 
-                whileTap={{ scale: 0.9 }}
-                onClick={() => onToggleDarkMode(!darkMode)}
-                className={cn(
-                  "w-14 h-7 rounded-full transition-all relative flex items-center px-1 shadow-inner",
-                  darkMode ? "bg-blue-600" : "bg-gray-300 dark:bg-gray-600"
-                )}
-              >
-                <motion.div 
-                  layout
-                  transition={{ type: "spring", stiffness: 500, damping: 30 }}
-                  className={cn(
-                    "w-5 h-5 bg-white rounded-full shadow-md flex items-center justify-center z-10",
-                    darkMode ? "ml-auto" : "ml-0"
-                  )}
-                >
-                  <AnimatePresence mode="wait">
-                    {darkMode ? (
-                      <motion.div
-                        key="moon"
-                        initial={{ scale: 0, rotate: -90 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        exit={{ scale: 0, rotate: 90 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <Moon size={10} className="text-blue-600" />
-                      </motion.div>
-                    ) : (
-                      <motion.div
-                        key="sun"
-                        initial={{ scale: 0, rotate: 90 }}
-                        animate={{ scale: 1, rotate: 0 }}
-                        exit={{ scale: 0, rotate: -90 }}
-                        transition={{ duration: 0.2 }}
-                      >
-                        <Sun size={10} className="text-yellow-500" />
-                      </motion.div>
-                    )}
-                  </AnimatePresence>
-                </motion.div>
-                <div className="absolute inset-0 flex items-center justify-between px-1.5 pointer-events-none">
-                  <Sun size={10} className={cn("transition-opacity", darkMode ? "opacity-40" : "opacity-0")} />
-                  <Moon size={10} className={cn("transition-opacity", darkMode ? "opacity-0" : "opacity-40")} />
+            <div className="md:col-span-2 p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl space-y-3 transition-colors">
+              <div className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-xs font-bold text-gray-800 dark:text-gray-200">Theme Preference</p>
+                  <p className="text-[10px] text-gray-500 dark:text-gray-400 font-medium">Choose your preferred visual style</p>
                 </div>
-              </motion.button>
+              </div>
+              <div className="grid grid-cols-3 gap-2">
+                {(['light', 'dark', 'system'] as const).map((t) => (
+                  <button
+                    key={t}
+                    onClick={() => onThemeChange(t)}
+                    className={cn(
+                      "flex flex-col items-center gap-2 p-3 rounded-xl border-2 transition-all relative overflow-hidden",
+                      theme === t 
+                        ? t === 'light'
+                          ? "bg-amber-50 border-amber-500 text-amber-600 shadow-[0_0_15px_rgba(245,158,11,0.2)]"
+                          : t === 'dark'
+                            ? "bg-indigo-50 dark:bg-indigo-900/30 border-indigo-600 text-indigo-600 dark:text-indigo-400 shadow-[0_0_15px_rgba(79,70,229,0.2)]"
+                            : "bg-blue-50 dark:bg-blue-900/30 border-blue-600 text-blue-600 dark:text-blue-400 shadow-[0_0_15px_rgba(37,99,235,0.2)]"
+                        : "bg-white dark:bg-gray-900 border-gray-100 dark:border-gray-800 text-gray-400 hover:border-gray-200 dark:hover:border-gray-700"
+                    )}
+                  >
+                    {theme === t && (
+                      <motion.div 
+                        layoutId="activeTheme"
+                        className={cn(
+                          "absolute inset-0 opacity-10",
+                          t === 'light' ? "bg-amber-400" : t === 'dark' ? "bg-indigo-400" : "bg-blue-400"
+                        )}
+                      />
+                    )}
+                    {t === 'light' && <Sun size={18} className={cn(theme === t && "animate-pulse")} />}
+                    {t === 'dark' && <Moon size={18} />}
+                    {t === 'system' && <Monitor size={18} />}
+                    <span className="text-[10px] font-black uppercase tracking-widest relative z-10">{t}</span>
+                  </button>
+                ))}
+              </div>
             </div>
           </div>
         </div>
@@ -257,6 +219,61 @@ export const Settings: React.FC<SettingsProps> = ({
                 {isLoading ? "Clearing..." : "Clear Current Shift"}
               </button>
             </div>
+          </div>
+        </div>
+
+        {/* Epic Integration & Compliance */}
+        <div className="space-y-4 pt-4">
+          <h3 className="text-xs font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest flex items-center gap-2">
+            <Activity size={14} /> Epic & SMART on FHIR
+          </h3>
+          
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="p-5 bg-orange-50/50 dark:bg-orange-900/20 border border-orange-100 dark:border-orange-800/50 rounded-2xl space-y-4">
+              <div className="flex items-center gap-2 text-orange-700 dark:text-orange-400 font-bold text-sm">
+                <Database size={16} /> Connection Status
+              </div>
+              <div className="space-y-3">
+                <div className="flex items-center justify-between text-[10px] font-bold">
+                  <span className="text-gray-500 uppercase tracking-widest">Environment</span>
+                  <span className="text-orange-600 px-2 py-0.5 bg-orange-100 dark:bg-orange-900/30 rounded-md">Epic Sandbox (R4)</span>
+                </div>
+                <div className="flex items-center justify-between text-[10px] font-bold">
+                  <span className="text-gray-500 uppercase tracking-widest">Client ID</span>
+                  <span className="text-gray-700 dark:text-gray-300 font-mono truncate max-w-[120px]">
+                    {(import.meta as any).env?.VITE_EPIC_CLIENT_ID || 'Configured in .env'}
+                  </span>
+                </div>
+                {!(import.meta as any).env?.VITE_EPIC_CLIENT_ID && (
+                  <p className="text-[9px] text-orange-600 dark:text-orange-400 font-medium leading-relaxed italic">
+                    Add VITE_EPIC_CLIENT_ID to your environment variables to enable direct connections.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="p-5 bg-blue-50/50 dark:bg-blue-900/20 border border-blue-100 dark:border-blue-800/50 rounded-2xl space-y-4">
+              <div className="flex items-center gap-2 text-blue-700 dark:text-blue-400 font-bold text-sm">
+                <ShieldAlert size={16} /> HIPAA Compliance
+              </div>
+              <p className="text-[10px] text-gray-600 dark:text-gray-400 leading-relaxed font-medium">
+                To maintain HIPAA compliance while using the Epic integration:
+              </p>
+              <ul className="space-y-1.5 list-disc list-inside text-[9px] text-gray-500 dark:text-gray-500 font-medium">
+                <li>TLS 1.2+ encryption for all transit</li>
+                <li>Access tokens are short-lived and not persisted</li>
+                <li>Imported PHI is immediately filtered to initials/age</li>
+                <li>Audit logs track all FHIR data access events</li>
+              </ul>
+            </div>
+          </div>
+          
+          <div className="p-4 bg-gray-50 dark:bg-gray-800/50 border border-gray-200 dark:border-gray-700 rounded-2xl space-y-3">
+            <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">App Callback URL (Required for open.epic)</p>
+            <div className="flex items-center gap-2 bg-white dark:bg-gray-900 p-2 rounded-lg border border-gray-100 dark:border-gray-800 font-mono text-[9px] text-blue-600 truncate">
+              {window.location.origin}/auth/callback
+            </div>
+            <p className="text-[9px] text-gray-400 font-medium italic">Paste this into the "Endpoint URI" field in your Epic Developer dashboard.</p>
           </div>
         </div>
 

@@ -40,7 +40,8 @@ export interface Patient {
   room: string;
   chiefComplaint: string;
   status: PatientStatus;
-  seenState: SeenState;
+  fellowSeen: boolean;
+  attendingSeen: boolean;
   assignedTeam: string[]; // IDs of team members
   tasks: {
     labs: TaskState;
@@ -72,11 +73,22 @@ export interface Patient {
     boarding: boolean;
   };
   operationalNotes: string;
+  gestationalAge?: {
+    weeks: number;
+    days: number;
+  };
   lastAssessmentAt: Timestamp;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   isPinned?: boolean;
   isCompleted?: boolean;
+  epicId?: string;
+  epicToken?: string; // Short-lived access token for session
+  vitals?: {
+    hr?: string;
+    temp?: string;
+    bp?: string;
+  };
 }
 
 export interface MedCommCall {

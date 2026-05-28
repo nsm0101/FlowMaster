@@ -3,12 +3,13 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { Patient, TeamMember } from '../types';
 import { PatientCard } from './PatientCard';
-import { Search, Filter, SortAsc, SortDesc, User, Users, Clock, AlertCircle, Plus, LayoutGrid, List, ChevronDown, ChevronUp, X } from 'lucide-react';
+import { Search, Filter, SortAsc, SortDesc, User, Users, Clock, AlertCircle, Plus, LayoutGrid, List, ChevronDown, ChevronUp, X, Activity } from 'lucide-react';
 import { cn, getRoleColor } from '../lib/utils';
 import { DndContext, DragOverlay, useDraggable, useDroppable, DragEndEvent, TouchSensor, PointerSensor, useSensor, useSensors } from '@dnd-kit/core';
+import { motion, AnimatePresence } from 'framer-motion';
 
 interface PatientBoardProps {
   patients: Patient[];
@@ -18,10 +19,11 @@ interface PatientBoardProps {
   onCompletePatient: (id: string) => void;
   onResetTimer: (id: string) => void;
   onAddPatient: () => void;
+  onImportFromEpic?: () => void;
   onAddTeamMember?: (member: Partial<TeamMember>) => void;
-  colorBlindMode?: boolean;
   compactMode?: boolean;
   twoColumnMode?: boolean;
+  onToggleTwoColumnMode?: (val: boolean) => void;
   darkMode?: boolean;
 }
 
@@ -47,9 +49,9 @@ const DraggableTeamMember = ({ member, onFilter }: { member: TeamMember, onFilte
         }
       }}
       className={cn(
-        "w-10 h-10 rounded-full border-2 flex flex-col items-center justify-center text-xs font-black cursor-grab active:cursor-grabbing transition-all shadow-sm shrink-0 overflow-hidden relative group",
+        "w-10 h-10 rounded-full border-2 flex flex-col items-center justify-center text-xs font-black cursor-grab active:cursor-grabbing transition-all shadow-sm shrink-0 relative group touch-none",
         getRoleColor(member.role),
-        isDragging && "opacity-50 scale-110 shadow-lg"
+        isDragging && "opacity-0 scale-110 shadow-lg"
       )}
       title={`${member.firstName} ${member.lastName} (${member.role})`}
     >
@@ -81,17 +83,19 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
   onCompletePatient,
   onResetTimer,
   onAddPatient,
+  onImportFromEpic,
   onAddTeamMember,
-  colorBlindMode = false,
   compactMode = false,
   twoColumnMode = false,
+  onToggleTwoColumnMode,
   darkMode = false
 }) => {
   const [search, setSearch] = useState('');
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [isFilterOpen, setIsFilterOpen] = useState(false);
   const [isSortOpen, setIsSortOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<'room' | 'status' | 'age' | 'timer'>('room');
-  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
+  const [sortBy, setSortBy] = useState<'room' | 'status' | 'age' | 'timer' | 'createdAt'>('createdAt');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
   const [filterProvider, setFilterProvider] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [isQuickAddOpen, setIsQuickAddOpen] = useState(false);
@@ -148,18 +152,29 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
         return bTime - aTime;
       }
 
-      // 4. Room assignment status (Assigned rooms first)
-      const isUnassigned = (room: string) => !room || room === '?' || room === 'TBD' || room === 'WAIT';
-      const aUnassigned = isUnassigned(a.room);
-      const bUnassigned = isUnassigned(b.room);
-      if (!aUnassigned && bUnassigned) return -1;
-      if (aUnassigned && !bUnassigned) return 1;
+      // If sorting by room, we might want unassigned at the bottom
+      if (sortBy === 'room') {
+        const isUnassigned = (room: string) => !room || room === '?' || room === 'TBD' || room === 'WAIT';
+        const aUnassigned = isUnassigned(a.room);
+        const bUnassigned = isUnassigned(b.room);
+        if (!aUnassigned && bUnassigned) return -1;
+        if (aUnassigned && !bUnassigned) return 1;
+      }
 
       let comparison = 0;
-      if (sortBy === 'room') comparison = a.room.localeCompare(b.room, undefined, { numeric: true });
-      else if (sortBy === 'status') comparison = a.status.localeCompare(b.status);
-      else if (sortBy === 'age') comparison = parseInt(a.age) - parseInt(b.age);
-      else if (sortBy === 'timer') comparison = a.lastAssessmentAt.toMillis() - b.lastAssessmentAt.toMillis();
+      if (sortBy === 'room') {
+        comparison = a.room.localeCompare(b.room, undefined, { numeric: true });
+      } else if (sortBy === 'createdAt') {
+        const aTime = a.createdAt ? a.createdAt.toMillis() : 0;
+        const bTime = b.createdAt ? b.createdAt.toMillis() : 0;
+        comparison = aTime - bTime;
+      } else if (sortBy === 'status') {
+        comparison = a.status.localeCompare(b.status);
+      } else if (sortBy === 'age') {
+        comparison = parseInt(a.age) - parseInt(b.age);
+      } else if (sortBy === 'timer') {
+        comparison = a.lastAssessmentAt.toMillis() - b.lastAssessmentAt.toMillis();
+      }
       
       return sortOrder === 'asc' ? comparison : -comparison;
     });
@@ -170,15 +185,6 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
   const groupedPatients = useMemo(() => {
     if (filterProvider === 'all') return { all: filteredAndSortedPatients };
     
-    // If a specific provider is selected, we still group them but only show that provider
-    // However, the user requested "Collapsible sections by provider selected (when filter is active all a (All Providers) button to clear the selection"
-    // This implies that when "All Providers" is selected, we might NOT group, or we group by ALL providers.
-    // Let's implement grouping by provider when a specific provider is NOT selected, OR just group by the selected provider.
-    // Wait, the request says: "Collpaseable sections by provider selected (when filter is active all a (All Providers) button to clear the selection"
-    // This means if filterProvider !== 'all', we show a section for that provider.
-    // Actually, it might mean we group by provider ALWAYS, or only when filtered.
-    // Let's group by provider if filterProvider !== 'all'.
-    
     const groups: Record<string, Patient[]> = {};
     filteredAndSortedPatients.forEach(p => {
       if (p.assignedTeam.length === 0) {
@@ -187,7 +193,6 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
       } else {
         p.assignedTeam.forEach(providerId => {
           if (!groups[providerId]) groups[providerId] = [];
-          // Avoid duplicates if a patient has multiple providers and we are showing all
           if (!groups[providerId].find(existing => existing.id === p.id)) {
              groups[providerId].push(p);
           }
@@ -197,13 +202,48 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
     return groups;
   }, [filteredAndSortedPatients, filterProvider]);
 
+  const teamWorkload = useMemo(() => {
+    const workload: Record<string, number> = {};
+    patients.forEach(p => {
+      p.assignedTeam.forEach(id => {
+        workload[id] = (workload[id] || 0) + 1;
+      });
+    });
+    return workload;
+  }, [patients]);
+
   const [collapsedGroups, setCollapsedGroups] = useState<Record<string, boolean>>({});
 
   const toggleGroup = (groupId: string) => {
     setCollapsedGroups(prev => ({ ...prev, [groupId]: !prev[groupId] }));
   };
 
+  const sensors = useSensors(
+    useSensor(PointerSensor, {
+      activationConstraint: {
+        distance: 5,
+      },
+    }),
+    useSensor(TouchSensor, {
+      activationConstraint: {
+        delay: 150,
+        tolerance: 10,
+      },
+    })
+  );
+
+  const [activeMember, setActiveMember] = useState<TeamMember | null>(null);
+
+  const handleDragStart = (event: any) => {
+    const { active } = event;
+    if (active.data.current?.member) {
+      setActiveMember(active.data.current.member);
+      if (navigator.vibrate) navigator.vibrate(10);
+    }
+  };
+
   const handleDragEnd = (event: DragEndEvent) => {
+    setActiveMember(null);
     const { active, over } = event;
     if (over && active.data.current) {
       const memberId = active.data.current.member.id;
@@ -218,22 +258,21 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
     }
   };
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    }),
-    useSensor(TouchSensor, {
-      activationConstraint: {
-        delay: 250,
-        tolerance: 5,
-      },
-    })
-  );
+  useEffect(() => {
+    if (activeMember) {
+      document.body.style.overflow = 'hidden';
+      // Prevent touch move to avoid scrolling during drag
+      const preventDefault = (e: TouchEvent) => e.preventDefault();
+      document.addEventListener('touchmove', preventDefault, { passive: false });
+      return () => {
+        document.body.style.overflow = '';
+        document.removeEventListener('touchmove', preventDefault);
+      };
+    }
+  }, [activeMember]);
 
   return (
-    <DndContext sensors={sensors} onDragEnd={handleDragEnd}>
+    <DndContext sensors={sensors} onDragStart={handleDragStart} onDragEnd={handleDragEnd}>
       {/* Quick Add Modal */}
       {isQuickAddOpen && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-in fade-in duration-200">
@@ -312,59 +351,81 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
 
       <div className="space-y-4">
         {/* Team Bar - Scrolling with patients */}
-        <div className="bg-white/90 dark:bg-gray-950/90 backdrop-blur-md py-1 border-b border-gray-100 dark:border-gray-800 -mx-4 px-4 shadow-sm flex items-center justify-between gap-0 transition-colors">
-          <div className="flex-1 flex flex-col min-w-0">
-            <div className="flex justify-center w-full">
-              <div className="flex items-center gap-1 opacity-60">
-                <Users size={10} className="text-gray-400 dark:text-gray-500" />
-                <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase tracking-widest whitespace-nowrap">Team</span>
-              </div>
-            </div>
-            <div className="flex items-center gap-2 overflow-x-auto no-scrollbar py-1 scroll-touch snap-x-mandatory">
-              {teamMembers.map(m => (
-                <div key={m.id} className="snap-center">
-                  <DraggableTeamMember 
-                    member={m} 
-                    onFilter={(id) => setFilterProvider(id === filterProvider ? 'all' : id)} 
-                  />
-                </div>
-              ))}
-              <div className="snap-center">
-                <button
-                  onClick={() => setIsQuickAddOpen(true)}
-                  className="w-10 h-10 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center text-gray-400 dark:text-gray-600 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all shrink-0"
-                  title="Quick Add Team Member"
-                >
-                  <Plus size={16} />
-                </button>
-              </div>
-              {teamMembers.length === 0 && (
-                <span className="text-[10px] text-gray-400 dark:text-gray-600 font-medium italic">No team members active</span>
-              )}
-            </div>
+        <div className="sticky top-12 md:top-14 z-50 bg-white/95 dark:bg-gray-950/95 backdrop-blur-md py-0.5 border-b border-gray-100 dark:border-gray-800 -mx-4 px-4 shadow-sm flex items-center gap-0.5 transition-colors overflow-y-hidden">
+          <div className="flex items-center gap-0.5 shrink-0 opacity-60">
+            <Users size={12} className="text-gray-400 dark:text-gray-500" />
+            <span className="col-header whitespace-nowrap tracking-tight">Team</span>
           </div>
 
-          <div className="w-px h-10 bg-gray-200 dark:bg-gray-800 mx-2 shrink-0 transition-colors" />
+          <div className="flex-1 flex items-center gap-0.5 overflow-x-auto no-scrollbar py-0.5 scroll-touch snap-x-mandatory">
+            {teamMembers.map(m => (
+              <div key={m.id} className="snap-center relative">
+                <DraggableTeamMember 
+                  member={m} 
+                  onFilter={(id) => setFilterProvider(id === filterProvider ? 'all' : id)} 
+                />
+                {teamWorkload[m.id] > 0 && (
+                  <div className="absolute bottom-0.5 left-1/2 -translate-x-1/2 flex flex-wrap justify-center gap-0.5 z-10 w-8 pointer-events-none">
+                    {Array.from({ length: Math.min(teamWorkload[m.id], 4) }).map((_, i) => (
+                      <div key={i} className="w-1 h-1 rounded-full bg-blue-500 border border-white dark:border-gray-900 shadow-sm" />
+                    ))}
+                    {teamWorkload[m.id] > 4 && (
+                      <div className="w-1 h-1 rounded-full bg-blue-600 border border-white dark:border-gray-900 shadow-sm flex items-center justify-center">
+                        <span className="text-[4px] text-white font-bold">+</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            ))}
+            <div className="snap-center">
+              <button
+                onClick={() => setIsQuickAddOpen(true)}
+                className="w-10 h-10 rounded-full border-2 border-dashed border-gray-300 dark:border-gray-700 flex items-center justify-center text-gray-400 dark:text-gray-600 hover:text-blue-600 dark:hover:text-blue-400 hover:border-blue-300 dark:hover:border-blue-800 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-all shrink-0"
+                title="Quick Add Team Member"
+              >
+                <Plus size={16} />
+              </button>
+            </div>
+            {teamMembers.length === 0 && (
+              <span className="text-[10px] text-gray-400 dark:text-gray-600 font-medium italic whitespace-nowrap">No team members active</span>
+            )}
+          </div>
 
-          <button 
-            onClick={onAddPatient}
-            className="flex flex-col items-center justify-center min-w-[50px] h-10 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all shrink-0"
-          >
-            <Plus size={20} />
-            <span className="text-[8px] font-black uppercase tracking-tighter">Add Patient</span>
-          </button>
+          <div className="w-px h-6 bg-gray-200 dark:bg-gray-800 shrink-0 transition-colors" />
+
+          <div className="flex items-center gap-1">
+            {onImportFromEpic && (
+              <button 
+                onClick={onImportFromEpic}
+                className="flex flex-col items-center justify-center min-w-[44px] h-8 text-orange-600 dark:text-orange-400 hover:bg-orange-50 dark:hover:bg-orange-900/20 rounded-xl transition-all shrink-0"
+                title="Direct Epic Connection"
+              >
+                <Activity size={16} />
+                <span className="text-[6px] font-black uppercase tracking-tighter">Epic Import</span>
+              </button>
+            )}
+
+            <button 
+              onClick={onAddPatient}
+              className="flex flex-col items-center justify-center min-w-[40px] h-8 text-blue-600 dark:text-blue-400 hover:bg-blue-50 dark:hover:bg-blue-900/20 rounded-xl transition-all shrink-0"
+            >
+              <Plus size={16} />
+              <span className="text-[6px] font-black uppercase tracking-tighter">Add Patient</span>
+            </button>
+          </div>
         </div>
 
         {/* Board Controls */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-center justify-start gap-4">
-            <div className="flex items-center gap-4">
+        <div className="flex flex-col gap-2">
+          <div className="flex items-center justify-between px-1">
+            <div className="flex items-center gap-6">
               {isSearchOpen ? (
                 <div className="relative animate-in slide-in-from-left-2 duration-200 min-w-[200px]">
                   <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 dark:text-gray-500" />
                   <input 
                     autoFocus
-                    className="w-full pl-9 pr-8 py-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-colors"
+                    className="w-full pl-9 pr-8 py-1.5 bg-white dark:bg-gray-900 border border-gray-200 dark:border-gray-800 rounded-lg text-xs text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none shadow-sm transition-colors font-mono"
                     placeholder="Search..."
                     value={search}
                     onChange={(e) => setSearch(e.target.value)}
@@ -379,80 +440,135 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
               ) : (
                 <button 
                   onClick={() => setIsSearchOpen(true)}
-                  className="text-[10px] font-black text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400 tracking-widest uppercase transition-colors"
+                  className="col-header opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors"
                 >
                   SEARCH
                 </button>
               )}
               
               <button 
-                onClick={() => setIsSortOpen(!isSortOpen)}
+                onClick={() => {
+                  setIsFilterOpen(!isFilterOpen);
+                  setIsSortOpen(false);
+                }}
                 className={cn(
-                  "text-[10px] font-black tracking-widest uppercase transition-all",
-                  isSortOpen ? "text-blue-600 dark:text-blue-400" : "text-gray-400 dark:text-gray-500 hover:text-blue-600 dark:hover:text-blue-400"
+                  "col-header opacity-100 transition-all",
+                  isFilterOpen ? "text-blue-600 dark:text-blue-400 opacity-100" : "hover:text-blue-600 dark:hover:text-blue-400"
                 )}
               >
                 FILTER
               </button>
+
+              <button 
+                onClick={() => {
+                  setIsSortOpen(!isSortOpen);
+                  setIsFilterOpen(false);
+                }}
+                className={cn(
+                  "col-header opacity-100 transition-all",
+                  isSortOpen ? "text-blue-600 dark:text-blue-400 opacity-100" : "hover:text-blue-600 dark:hover:text-blue-400"
+                )}
+              >
+                SORT
+              </button>
+
+              {onToggleTwoColumnMode && (
+                <button 
+                  onClick={() => onToggleTwoColumnMode(!twoColumnMode)}
+                  className="col-header opacity-100 hover:text-blue-600 dark:hover:text-blue-400 transition-colors flex items-center gap-1.5"
+                >
+                  {twoColumnMode ? <List size={14} /> : <LayoutGrid size={14} />}
+                  <span className="hidden sm:inline">{twoColumnMode ? 'SINGLE' : 'GRID'}</span>
+                </button>
+              )}
+            </div>
+            
+            <div className="flex items-center gap-2">
+              <div className="h-1 w-1 rounded-full bg-green-500 animate-pulse" />
+              <span className="col-header opacity-40">Live Sync</span>
             </div>
           </div>
 
-          {isSortOpen && (
-            <div className="flex flex-wrap items-center gap-2 p-3 bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 rounded-2xl shadow-sm animate-in fade-in slide-in-from-top-2 duration-200 transition-colors">
-              <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg px-2 py-1 transition-colors">
-                <SortAsc size={14} className="text-gray-400 dark:text-gray-500" />
-                <select 
-                  className="text-xs font-bold text-gray-600 dark:text-gray-300 bg-transparent outline-none"
-                  value={sortBy}
-                  onChange={(e) => setSortBy(e.target.value as any)}
-                >
-                  <option value="room">Room</option>
-                  <option value="status">Status</option>
-                  <option value="age">Age</option>
-                  <option value="timer">Timer</option>
-                </select>
-                <button 
-                  onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
-                  className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-400 dark:text-gray-500 transition-colors"
-                >
-                  {sortOrder === 'asc' ? <SortAsc size={14} /> : <SortDesc size={14} />}
-                </button>
-              </div>
+          <AnimatePresence>
+            {isSortOpen && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-wrap items-center gap-2 p-3 glass rounded-2xl shadow-sm transition-colors mb-2">
+                  <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg px-2 py-1 transition-colors">
+                    <SortAsc size={14} className="text-gray-400 dark:text-gray-500" />
+                    <select 
+                      className="text-xs font-bold text-gray-600 dark:text-gray-300 bg-transparent outline-none font-mono"
+                      value={sortBy}
+                      onChange={(e) => setSortBy(e.target.value as any)}
+                    >
+                      <option value="createdAt">To-do (Time Added)</option>
+                      <option value="room">Room</option>
+                      <option value="status">Status</option>
+                      <option value="age">Age</option>
+                      <option value="timer">Timer</option>
+                    </select>
+                    <button 
+                      onClick={() => setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc')}
+                      className="p-1 hover:bg-gray-200 dark:hover:bg-gray-700 rounded text-gray-400 dark:text-gray-500 transition-colors"
+                    >
+                      {sortOrder === 'asc' ? <SortAsc size={14} /> : <SortDesc size={14} />}
+                    </button>
+                  </div>
+                </div>
+              </motion.div>
+            )}
 
-              <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg px-2 py-1 transition-colors">
-                <Users size={14} className="text-gray-400 dark:text-gray-500" />
-                <select 
-                  className="text-xs font-bold text-gray-600 dark:text-gray-300 bg-transparent outline-none max-w-[100px]"
-                  value={filterProvider}
-                  onChange={(e) => setFilterProvider(e.target.value)}
-                >
-                  <option value="all">All Providers</option>
-                  {teamMembers.map(m => (
-                    <option key={m.id} value={m.id}>{m.initials} - {m.lastName}</option>
-                  ))}
-                </select>
-              </div>
+            {isFilterOpen && (
+              <motion.div 
+                initial={{ height: 0, opacity: 0 }}
+                animate={{ height: 'auto', opacity: 1 }}
+                exit={{ height: 0, opacity: 0 }}
+                className="overflow-hidden"
+              >
+                <div className="flex flex-wrap items-center gap-2 p-3 glass rounded-2xl shadow-sm transition-colors mb-2">
+                  <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg px-2 py-1 transition-colors">
+                    <Users size={14} className="text-gray-400 dark:text-gray-500" />
+                    <select 
+                      className="text-xs font-bold text-gray-600 dark:text-gray-300 bg-transparent outline-none max-w-[100px]"
+                      value={filterProvider}
+                      onChange={(e) => setFilterProvider(e.target.value)}
+                    >
+                      <option value="all">All Providers</option>
+                      {teamMembers.map(m => (
+                        <option key={m.id} value={m.id}>{m.initials} - {m.lastName}</option>
+                      ))}
+                    </select>
+                  </div>
 
-              <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg px-2 py-1 transition-colors">
-                <Filter size={14} className="text-gray-400 dark:text-gray-500" />
-                <select 
-                  className="text-xs font-bold text-gray-600 dark:text-gray-300 bg-transparent outline-none max-w-[100px]"
-                  value={filterStatus}
-                  onChange={(e) => setFilterStatus(e.target.value)}
-                >
-                  <option value="all">All Status</option>
-                  {['New', 'Staff', 'Work-up', 'ED Observation', 'Likely Discharge', 'Likely Admit', 'Discharge', 'Admit'].map(s => (
-                    <option key={s} value={s}>{s}</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-          )}
+                  <div className="flex items-center gap-1.5 bg-gray-50 dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg px-2 py-1 transition-colors">
+                    <Filter size={14} className="text-gray-400 dark:text-gray-500" />
+                    <select 
+                      className="text-xs font-bold text-gray-600 dark:text-gray-300 bg-transparent outline-none max-w-[100px]"
+                      value={filterStatus}
+                      onChange={(e) => setFilterStatus(e.target.value)}
+                    >
+                      <option value="all">All Status</option>
+                      {['New', 'Staff', 'Work-up', 'ED Observation', 'Likely Discharge', 'Likely Admit', 'Discharge', 'Admit'].map(s => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
         </div>
 
         {/* Patient List */}
         {filterProvider === 'all' ? (
-          <div className={cn("grid gap-2", twoColumnMode ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1")}>
+          <div className={cn(
+            "grid gap-4", 
+            twoColumnMode ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" : "grid-cols-1"
+          )}>
             {filteredAndSortedPatients.map(patient => (
               <PatientCard 
                 key={patient.id} 
@@ -461,15 +577,26 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
                 onDelete={onDeletePatient}
                 onComplete={onCompletePatient}
                 onResetTimer={onResetTimer}
-                colorBlindMode={colorBlindMode}
                 compactMode={compactMode}
                 teamMembers={teamMembers}
                 darkMode={darkMode}
               />
             ))}
             {filteredAndSortedPatients.length === 0 && (
-              <div className="py-20 text-center text-gray-400 dark:text-gray-500 italic text-sm border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-2xl">
-                No patients found matching your filters.
+              <div className="py-20 flex flex-col items-center justify-center gap-4 text-gray-400 dark:text-gray-500 border-2 border-dashed border-gray-200 dark:border-gray-800 rounded-3xl bg-gray-50/50 dark:bg-gray-900/50 transition-colors">
+                <div className="w-16 h-16 rounded-full bg-white dark:bg-gray-800 flex items-center justify-center shadow-sm border border-gray-100 dark:border-gray-700">
+                  <Search size={24} className="opacity-20" />
+                </div>
+                <div className="text-center space-y-1">
+                  <p className="font-serif italic text-lg">No patients found</p>
+                  <p className="text-[10px] uppercase tracking-widest opacity-60">Try adjusting your filters or search terms</p>
+                </div>
+                <button 
+                  onClick={() => { setSearch(''); setFilterProvider('all'); setFilterStatus('all'); }}
+                  className="px-4 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-full text-[10px] font-black uppercase tracking-widest hover:bg-gray-50 dark:hover:bg-gray-700 transition-all shadow-sm active:scale-95"
+                >
+                  Clear All Filters
+                </button>
               </div>
             )}
           </div>
@@ -520,7 +647,10 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
                   </button>
                   
                   {!isCollapsed && (
-                    <div className={cn("grid gap-2 pl-2 md:pl-4 border-l-2 border-gray-100 dark:border-gray-800 transition-colors", twoColumnMode ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1")}>
+                    <div className={cn(
+                      "grid gap-4 pl-2 md:pl-4 border-l-2 border-gray-100 dark:border-gray-800 transition-colors", 
+                      twoColumnMode ? "grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4" : "grid-cols-1"
+                    )}>
                       {groupPatients.map(patient => (
                         <PatientCard 
                           key={patient.id} 
@@ -529,7 +659,6 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
                           onDelete={onDeletePatient}
                           onComplete={onCompletePatient}
                           onResetTimer={onResetTimer}
-                          colorBlindMode={colorBlindMode}
                           compactMode={compactMode}
                           teamMembers={teamMembers}
                           darkMode={darkMode}
@@ -548,8 +677,25 @@ export const PatientBoard: React.FC<PatientBoardProps> = ({
           </div>
         )}
       </div>
-      <DragOverlay>
-        {/* Drag overlay handled by dnd-kit */}
+      <DragOverlay dropAnimation={null}>
+        {activeMember ? (
+          <div className={cn(
+            "w-12 h-12 rounded-full border-2 flex flex-col items-center justify-center text-xs font-black shadow-2xl scale-110 opacity-90",
+            getRoleColor(activeMember.role)
+          )}>
+            {activeMember.avatarUrl || activeMember.emoji ? (
+              <div className="w-full h-full flex items-center justify-center bg-white dark:bg-gray-800 rounded-full overflow-hidden">
+                {activeMember.avatarUrl ? (
+                  <img src={activeMember.avatarUrl} alt={activeMember.initials} className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-2xl">{activeMember.emoji}</span>
+                )}
+              </div>
+            ) : (
+              activeMember.initials
+            )}
+          </div>
+        ) : null}
       </DragOverlay>
     </DndContext>
   );

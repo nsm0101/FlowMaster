@@ -3,10 +3,11 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { PatientStatus } from '../types';
-import { getStatusColor, getStatusSymbol, cn } from '../lib/utils';
+import { getStatusColor, cn } from '../lib/utils';
 import { Home, Bed, Users, FlaskConical, AlertCircle, Eye, Check, X, ArrowRight } from 'lucide-react';
 
 interface RadialStatusMenuProps {
@@ -92,15 +93,16 @@ export const RadialStatusMenu: React.FC<RadialStatusMenuProps> = ({
 
   if (!isOpen) return null;
 
-  return (
+  return createPortal(
     <AnimatePresence>
-      <div className="fixed inset-0 z-[9999] pointer-events-none overflow-hidden">
+      <div className="fixed inset-0 z-[9999] pointer-events-auto overflow-hidden">
         {/* Backdrop Blur */}
         <motion.div 
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="absolute inset-0 bg-black/40 backdrop-blur-md"
+          className="absolute inset-0 bg-black/60 backdrop-blur-2xl"
+          onClick={onClose}
         />
 
         {/* Menu Center Indicator */}
@@ -211,6 +213,7 @@ export const RadialStatusMenu: React.FC<RadialStatusMenuProps> = ({
           <p className="text-[10px] font-bold text-white/40 uppercase tracking-[0.2em]">Release to confirm status change</p>
         </motion.div>
       </div>
-    </AnimatePresence>
+    </AnimatePresence>,
+    document.body
   );
 };

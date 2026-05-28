@@ -1,3 +1,4 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;700&display=swap');
 @import "tailwindcss";
 
 @layer base {
@@ -10,7 +11,7 @@
     -webkit-tap-highlight-color: transparent;
     -webkit-user-select: none;
     user-select: none;
-    @apply bg-gray-50 text-gray-900 transition-colors duration-300;
+    @apply bg-gray-50 text-gray-900 transition-colors duration-300 font-sans;
     padding-top: env(safe-area-inset-top);
     padding-bottom: env(safe-area-inset-bottom);
     padding-left: env(safe-area-inset-left);
@@ -58,6 +59,10 @@
 }
 
 @theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-serif: "Georgia", serif;
+
   /* BUH Primary Palette (Brown University Health / Lifespan inspired) */
   --color-blue-50: #f0f7ff;
   --color-blue-100: #e0effe;
@@ -69,4 +74,27 @@
   --color-blue-700: #002d56;
   --color-blue-800: #002649;
   --color-blue-900: #00203d;
+
+  /* Hardware / Dashboard Accents */
+  --color-hardware-bg: #151619;
+  --color-hardware-line: rgba(255, 255, 255, 0.1);
+  --color-hardware-text: #8E9299;
+}
+
+@layer utilities {
+  .glass {
+    @apply bg-white/80 dark:bg-gray-950/80 backdrop-blur-md border border-white/20 dark:border-gray-800/20;
+  }
+  
+  .hardware-card {
+    @apply bg-gray-900 border border-gray-800 shadow-2xl rounded-2xl;
+  }
+
+  .data-value {
+    @apply font-mono tracking-tighter;
+  }
+
+  .col-header {
+    @apply font-sans not-italic text-[10px] uppercase tracking-widest opacity-50;
+  }
 }

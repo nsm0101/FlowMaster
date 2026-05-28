@@ -23,6 +23,7 @@ import {
 } from 'firebase/firestore';
 import { handleFirestoreError, OperationType } from './lib/firebaseUtils';
 import { Patient, TeamMember, MedCommCall, Shift } from './types';
+import { FhirService, EpicAuthData } from './services/fhirService';
 import { Layout } from './components/Layout';
 import { Login } from './components/Login';
 import { PatientBoard } from './components/PatientBoard';
@@ -41,7 +42,10 @@ export default function App() {
   const [activeTab, setActiveTab] = useState<'board' | 'medcomm' | 'team' | 'settings' | 'handoff'>('board');
   
   const [shifts, setShifts] = useState<Shift[]>([]);
-  const [activeShiftId, setActiveShiftId] = useState<string | null>(localStorage.getItem('activeShiftId'));
+  const [activeShiftId, setActiveShiftId] = useState<string | null>(() => {
+    const saved = localStorage.getItem('activeShiftId');
+    return saved === 'null' ? null : saved;
+  });
   
   const [patients, setPatients] = useState<Patient[]>([]);
   const [teamMembers, setTeamMembers] = useState<TeamMember[]>([]);
@@ -50,10 +54,11 @@ export default function App() {
   const [showMedCommForm, setShowMedCommForm] = useState(false);
   const [editingMedCommCall, setEditingMedCommCall] = useState<MedCommCall | null>(null);
   const [isActionLoading, setIsActionLoading] = useState(false);
-  const [colorBlindMode, setColorBlindMode] = useState<boolean>(localStorage.getItem('colorBlindMode') === 'true');
   const [compactMode, setCompactMode] = useState<boolean>(localStorage.getItem('compactMode') === 'true');
   const [twoColumnMode, setTwoColumnMode] = useState<boolean>(localStorage.getItem('twoColumnMode') === 'true');
-  const [darkMode, setDarkMode] = useState<boolean>(localStorage.getItem('darkMode') === 'true');
+  const [theme, setTheme] = useState<'light' | 'dark' | 'system'>(() => {
+    return (localStorage.getItem('theme') as 'light' | 'dark' | 'system') || 'system';
+  });
   const [undoAction, setUndoAction] = useState<{ id: string, previousData: Partial<Patient>, message: string, timeoutId?: NodeJS.Timeout } | null>(null);
 
   // Handle URL shiftId parameter
@@ -69,10 +74,6 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    localStorage.setItem('colorBlindMode', colorBlindMode.toString());
-  }, [colorBlindMode]);
-
-  useEffect(() => {
     localStorage.setItem('compactMode', compactMode.toString());
   }, [compactMode]);
 
@@ -81,13 +82,65 @@ export default function App() {
   }, [twoColumnMode]);
 
   useEffect(() => {
-    localStorage.setItem('darkMode', darkMode.toString());
-    if (darkMode) {
-      document.documentElement.classList.add('dark');
-    } else {
-      document.documentElement.classList.remove('dark');
+    localStorage.setItem('theme', theme);
+    const root = window.document.documentElement;
+    
+    const applyTheme = (t: 'light' | 'dark' | 'system') => {
+      if (t === 'system') {
+        const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+        root.classList.toggle('dark', systemTheme === 'dark');
+        root.style.colorScheme = systemTheme;
+      } else {
+        root.classList.toggle('dark', t === 'dark');
+        root.style.colorScheme = t;
+      }
+    };
+
+    applyTheme(theme);
+
+    if (theme === 'system') {
+      const mediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
+      const handleChange = () => applyTheme('system');
+      mediaQuery.addEventListener('change', handleChange);
+      return () => mediaQuery.removeEventListener('change', handleChange);
     }
-  }, [darkMode]);
+  }, [theme]);
+
+  // SMART on FHIR Listener
+  useEffect(() => {
+    const handleMessage = async (event: MessageEvent) => {
+      // Validate origin
+      const origin = event.origin;
+      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
+        return;
+      }
+
+      if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
+        const authData: EpicAuthData = event.data.data;
+        console.log("Epic Auth Success:", authData);
+        
+        try {
+          setIsActionLoading(true);
+          const patientUpdates = await FhirService.fetchPatientData(authData);
+          
+          if (activeShiftId) {
+            await addDoc(collection(db, `shifts/${activeShiftId}/patients`), patientUpdates);
+            alert(`Patient ${patientUpdates.initials} successfully imported from Epic!`);
+          }
+        } catch (error) {
+          console.error("Failed to import Epic patient:", error);
+          alert("Failed to import patient from Epic. Check console for details.");
+        } finally {
+          setIsActionLoading(false);
+        }
+      } else if (event.data?.type === 'OAUTH_AUTH_ERROR') {
+        alert(`Epic Connection Error: ${event.data.error}`);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [activeShiftId]);
 
   // Auth State
   useEffect(() => {
@@ -109,7 +162,7 @@ export default function App() {
           await setDoc(userRef, {
             email: u.email,
             lastLogin: Timestamp.now(),
-            role: u.email === 'Nickolas.Mancini@gmail.com' ? 'admin' : 'user'
+            role: u.email?.toLowerCase() === 'nickolas.mancini@gmail.com' ? 'admin' : 'user'
           }, { merge: true });
         } catch (error) {
           console.error("Failed to update user document:", error);
@@ -139,9 +192,10 @@ export default function App() {
     const unsubscribe = onSnapshot(q, (snapshot) => {
       const s = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() } as Shift));
       setShifts(s);
-      if (!activeShiftId && s.length > 0) {
-        setActiveShiftId(s[0].id);
-      }
+      setActiveShiftId(current => {
+        if (!current && s.length > 0) return s[0].id;
+        return current;
+      });
     }, (error) => {
       handleFirestoreError(error, OperationType.LIST, 'shifts');
     });
@@ -204,8 +258,8 @@ export default function App() {
     }
   };
 
-  const joinSession = async (sessionId: string) => {
-    if (!user) return;
+  const joinSession = async (sessionId: string): Promise<boolean> => {
+    if (!user) return false;
     const q = query(collection(db, 'shifts'), where('sessionId', '==', sessionId.toUpperCase()));
     const snapshot = await getDocs(q);
     if (!snapshot.empty) {
@@ -256,7 +310,8 @@ export default function App() {
       room: '?',
       chiefComplaint: 'New Patient',
       status: 'New',
-      seenState: 'To Be Seen',
+      fellowSeen: false,
+      attendingSeen: false,
       assignedTeam: [],
       tasks: { labs: 'off', imaging: 'off', meds: 'off', consult: 'off' },
       dischargeTasks: { instructions: 'off', rx: 'off', followUp: 'off', notes: 'off' },
@@ -282,6 +337,12 @@ export default function App() {
   const updatePatient = async (id: string, updates: Partial<Patient>) => {
     if (!activeShiftId) return;
     
+    // Check for Epic sync if status changed
+    const patient = patients.find(p => p.id === id);
+    if (patient && updates.status && updates.status !== patient.status) {
+      FhirService.updatePatientStatus(patient, updates.status);
+    }
+
     try {
       await updateDoc(doc(db, `shifts/${activeShiftId}/patients`, id), {
         ...updates,
@@ -412,7 +473,8 @@ export default function App() {
       room: 'TBD',
       chiefComplaint: call.chiefComplaint || 'MedComm Transfer',
       status: 'New',
-      seenState: 'To Be Seen',
+      fellowSeen: false,
+      attendingSeen: false,
       assignedTeam: [],
       tasks: { labs: 'off', imaging: 'off', meds: 'off', consult: 'off' },
       dischargeTasks: { instructions: 'off', rx: 'off', followUp: 'off', notes: 'off' },
@@ -461,9 +523,9 @@ export default function App() {
 
       // Add Patients
       const patientsData = [
-        { initials: 'JD', age: '4', room: '12', status: 'Work-up', seenState: 'Seen by Fellow', tasks: { labs: 'pending', imaging: 'ordered', meds: 'off', consult: 'off' } },
-        { initials: 'MK', age: '12', room: '05', status: 'New', seenState: 'To Be Seen', tasks: { labs: 'off', imaging: 'off', meds: 'off', consult: 'off' } },
-        { initials: 'RL', age: '8', room: '18', status: 'Likely Discharge', seenState: 'Seen by Attending', tasks: { labs: 'complete', imaging: 'complete', meds: 'complete', consult: 'off' } }
+        { initials: 'JD', age: '4', room: '12', status: 'Work-up', fellowSeen: true, attendingSeen: false, tasks: { labs: 'pending', imaging: 'ordered', meds: 'off', consult: 'off' } },
+        { initials: 'MK', age: '12', room: '05', status: 'New', fellowSeen: false, attendingSeen: false, tasks: { labs: 'off', imaging: 'off', meds: 'off', consult: 'off' } },
+        { initials: 'RL', age: '8', room: '18', status: 'Likely Discharge', fellowSeen: true, attendingSeen: true, tasks: { labs: 'complete', imaging: 'complete', meds: 'complete', consult: 'off' } }
       ];
 
       for (const p of patientsData) {
@@ -525,13 +587,14 @@ export default function App() {
       activeShiftId={activeShiftId}
     >
       <div className="space-y-6">
-        {/* Shift Selector always visible at top of settings or if no shift active */}
-        {(activeTab === 'settings' || !activeShiftId) && (
+        {/* Shift Selector visible if no shift active */}
+        {!activeShiftId && (
           <ShiftSelector 
             shifts={shifts} 
             activeShiftId={activeShiftId} 
             onSelect={setActiveShiftId} 
             onCreate={createShift} 
+            onDelete={deleteShift}
           />
         )}
 
@@ -554,10 +617,24 @@ export default function App() {
                 onResetTimer={resetPatientTimer}
                 onAddPatient={addPatient}
                 onAddTeamMember={addTeamMember}
-                colorBlindMode={colorBlindMode}
                 compactMode={compactMode}
                 twoColumnMode={twoColumnMode}
-                darkMode={darkMode}
+                onToggleTwoColumnMode={setTwoColumnMode}
+                darkMode={theme === 'dark' || (theme === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches)}
+                onImportFromEpic={async () => {
+                  try {
+                    const response = await fetch('/api/auth/epic-url');
+                    const { url } = await response.json();
+                    if (url) {
+                      window.open(url, 'epic_launch', 'width=800,height=700');
+                    } else {
+                      alert("Epic Client ID not configured. See Settings > Compliance.");
+                    }
+                  } catch (err) {
+                    console.error("Launch error:", err);
+                    alert("Failed to initiate Epic connection.");
+                  }
+                }}
               />
             )}
 
@@ -682,14 +759,12 @@ export default function App() {
                 onSeedData={seedDemoData} 
                 onClearData={clearShiftData} 
                 isLoading={isActionLoading}
-                colorBlindMode={colorBlindMode}
-                onToggleColorBlindMode={setColorBlindMode}
                 compactMode={compactMode}
                 onToggleCompactMode={setCompactMode}
                 twoColumnMode={twoColumnMode}
                 onToggleTwoColumnMode={setTwoColumnMode}
-                darkMode={darkMode}
-                onToggleDarkMode={setDarkMode}
+                theme={theme}
+                onThemeChange={setTheme}
                 onLogout={handleLogout}
                 user={user}
                 onUpdateProfile={handleUpdateProfile}

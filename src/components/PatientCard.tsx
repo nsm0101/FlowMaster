@@ -5,7 +5,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { Patient, TaskState, MedsConsultState, PatientStatus, TeamMember } from '../types';
-import { cn, getStatusStyle, getStatusSymbol, getSeenBorderStyle, getStatusGradient, getTimerColor, getRoleColor } from '../lib/utils';
+import { cn, getStatusStyle, getSeenBorderStyle, getStatusGradient, getTimerColor, getRoleColor } from '../lib/utils';
 import { 
   Clock, 
   CheckCircle2, 
@@ -33,13 +33,16 @@ import {
   MessageSquare,
   Bell,
   Users2,
-  Plus
+  Plus,
+  Mars,
+  Venus,
+  CircleDot,
+  ClipboardList
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { useDroppable } from '@dnd-kit/core';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion, AnimatePresence } from 'framer-motion';
 import { RadialStatusMenu } from './RadialStatusMenu';
-import { RadialTeamMenu } from './RadialTeamMenu';
 
 interface PatientCardProps {
   patient: Patient;
@@ -47,7 +50,6 @@ interface PatientCardProps {
   onResetTimer: (id: string) => void;
   onDelete: (id: string) => void;
   onComplete: (id: string) => void;
-  colorBlindMode?: boolean;
   compactMode?: boolean;
   teamMembers?: TeamMember[];
   darkMode?: boolean;
@@ -59,7 +61,6 @@ export const PatientCard: React.FC<PatientCardProps> = ({
   onResetTimer, 
   onDelete,
   onComplete,
-  colorBlindMode = false,
   compactMode = false,
   teamMembers = [],
   darkMode = false
@@ -68,8 +69,6 @@ export const PatientCard: React.FC<PatientCardProps> = ({
   const [elapsed, setElapsed] = useState<number>(0);
   const [radialMenuOpen, setRadialMenuOpen] = useState(false);
   const [radialMenuPos, setRadialMenuPos] = useState({ x: 0, y: 0 });
-  const [teamMenuOpen, setTeamMenuOpen] = useState(false);
-  const [teamMenuPos, setTeamMenuPos] = useState({ x: 0, y: 0 });
 
   const { setNodeRef, isOver } = useDroppable({
     id: patient.id,
@@ -185,12 +184,14 @@ export const PatientCard: React.FC<PatientCardProps> = ({
     });
   };
 
-  const toggleSeenState = (e: React.MouseEvent) => {
+  const toggleFellowSeen = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const states: Patient['seenState'][] = ['To Be Seen', 'Seen by Fellow', 'Seen by Attending'];
-    const idx = states.indexOf(patient.seenState);
-    const next = states[(idx + 1) % states.length];
-    onUpdate(patient.id, { seenState: next });
+    onUpdate(patient.id, { fellowSeen: !patient.fellowSeen });
+  };
+
+  const toggleAttendingSeen = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    onUpdate(patient.id, { attendingSeen: !patient.attendingSeen });
   };
 
   const getTaskIcon = (task: keyof Patient['tasks'], state: TaskState | MedsConsultState, size: number = 18) => {
@@ -302,7 +303,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
   };
   const dischargeTasks = patient.dischargeTasks || defaultDischargeTasks;
   const isGoodToGo = patient.status === 'Discharge' && 
-    patient.seenState === 'Seen by Attending' &&
+    patient.attendingSeen &&
     (dischargeTasks.instructions === 'complete' || dischargeTasks.instructions === 'none') &&
     (dischargeTasks.rx === 'home' || dischargeTasks.rx === 'facility' || dischargeTasks.rx === 'none') &&
     (dischargeTasks.followUp === 'complete' || dischargeTasks.followUp === 'none');
@@ -313,40 +314,18 @@ export const PatientCard: React.FC<PatientCardProps> = ({
       animate={isGoodToGo ? {
         boxShadow: ["0px 0px 0px rgba(34, 197, 94, 0)", "0px 0px 30px rgba(34, 197, 94, 0.5)", "0px 0px 0px rgba(34, 197, 94, 0)"],
         transition: { repeat: Infinity, duration: 1.5 }
-      } : (patient.status === 'New' && !patient.isCompleted ? {
-        y: [0, -4, 0],
-        scale: [1, 1.005, 1],
-        transition: { 
-          y: { repeat: Infinity, duration: 3, ease: "easeInOut" },
-          scale: { repeat: Infinity, duration: 3, ease: "easeInOut" }
-        }
-      } : {})}
+      } : {}}
       whileHover={{ y: -2, scale: 1.005, transition: { duration: 0.2 } }}
       onContextMenu={handleContextMenu}
       className={cn(
-        "group rounded-xl shadow-sm mb-4 transition-all relative touch-pan-y w-full max-w-full bg-white dark:bg-gray-900 border border-gray-100 dark:border-gray-800 overflow-visible active:shadow-lg",
-        getSeenBorderStyle(patient.seenState),
+        "group rounded-xl shadow-sm mb-4 transition-all relative touch-pan-y w-full max-w-full bg-white dark:bg-gray-900 border overflow-visible active:shadow-lg",
+        getSeenBorderStyle(patient.fellowSeen, patient.attendingSeen),
         patient.isPinned && "ring-2 ring-yellow-400 dark:ring-yellow-500",
         patient.isCompleted && "opacity-60 grayscale-[0.5]",
         isOver && "ring-4 ring-blue-400 dark:ring-blue-500 scale-[1.01] z-20",
         isGoodToGo && "border-green-500 dark:border-green-400 border-2"
       )}
     >
-      {/* Radial Team Assignment Menu */}
-      <RadialTeamMenu 
-        isOpen={teamMenuOpen}
-        onClose={() => setTeamMenuOpen(false)}
-        onSelect={(memberId) => {
-          if (!patient.assignedTeam.includes(memberId)) {
-            onUpdate(patient.id, { assignedTeam: [...patient.assignedTeam, memberId] });
-          }
-        }}
-        teamMembers={teamMembers}
-        centerX={teamMenuPos.x}
-        centerY={teamMenuPos.y}
-        darkMode={darkMode}
-      />
-
       {/* Radial Status Menu */}
       <RadialStatusMenu 
         isOpen={radialMenuOpen}
@@ -395,10 +374,10 @@ export const PatientCard: React.FC<PatientCardProps> = ({
         <Pin size={12} className={cn(patient.isPinned && "fill-current")} />
       </button>
 
-      {/* Team Icons - Floating Top Center on Desktop, Top Right on Mobile */}
+      {/* Team Icons - Floating Top Right */}
       <div className={cn(
-        "absolute flex items-center gap-1 z-30 transition-all",
-        "md:-top-[18px] md:left-1/2 md:-translate-x-1/2 -top-3 right-10"
+        "absolute flex items-center gap-1 z-20 transition-all",
+        "md:-top-6 md:right-4 -top-4 right-10"
       )}>
         {assignedMembers.map(m => (
           <div 
@@ -412,7 +391,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
             {m.avatarUrl || m.emoji ? (
               <div className="w-full h-full flex items-center justify-center bg-white dark:bg-gray-800">
                 {m.avatarUrl ? (
-                  <img src={m.avatarUrl} alt={m.initials} className="w-full h-full object-cover" />
+                  <img src={m.avatarUrl} alt={m.initials} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 ) : (
                   <span className="text-lg">{m.emoji}</span>
                 )}
@@ -427,24 +406,11 @@ export const PatientCard: React.FC<PatientCardProps> = ({
             )}
           </div>
         ))}
-        {assignedMembers.length === 0 && (
-          <motion.button
-            whileTap={{ scale: 0.9 }}
-            onClick={(e) => {
-              e.stopPropagation();
-              setTeamMenuPos({ x: e.clientX, y: e.clientY });
-              setTeamMenuOpen(true);
-            }}
-            className="w-9 h-9 rounded-full border-2 border-dashed border-gray-200 dark:border-gray-700 flex items-center justify-center text-gray-300 dark:text-gray-600 bg-white/80 dark:bg-gray-800/80 backdrop-blur-sm shadow-sm hover:text-blue-500 hover:border-blue-300 transition-colors"
-          >
-            <Plus size={16} />
-          </motion.button>
-        )}
       </div>
 
         <div 
           className={cn(
-            "flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4 relative z-10 touch-none",
+            "flex flex-col md:flex-row md:items-center justify-between gap-2 md:gap-4 relative z-30 touch-none",
             compactMode ? "p-1.5" : "p-3"
           )}
         >
@@ -456,23 +422,158 @@ export const PatientCard: React.FC<PatientCardProps> = ({
             "md:absolute md:-top-4 md:-left-4 md:ml-0 -ml-6 relative",
             compactMode ? "w-10 h-10" : "w-14 h-14"
           )}>
-            {!compactMode && <span className="text-[8px] font-black text-gray-400 dark:text-gray-500 uppercase leading-none mb-0.5">Room</span>}
-            <span className={cn("font-black text-gray-900 dark:text-white leading-none", compactMode ? "text-sm" : "text-xl")}>{patient.room}</span>
+            {!compactMode && <span className="col-header leading-none mb-0.5">Room</span>}
+            <input 
+              className={cn(
+                "data-value font-black text-gray-900 dark:text-white leading-none bg-transparent border-none p-0 text-center focus:ring-0 w-full",
+                compactMode ? "text-sm" : "text-xl"
+              )}
+              inputMode="numeric"
+              value={patient.room || ''}
+              onChange={(e) => onUpdate(patient.id, { room: e.target.value })}
+              onClick={(e) => e.stopPropagation()}
+            />
           </div>
           
           <div className="flex flex-col min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className={cn("font-black text-gray-900 dark:text-white tracking-tight truncate", compactMode ? "text-sm" : "text-xl")}>{patient.initials}</span>
-              <div className="flex items-center gap-1 bg-gray-100 dark:bg-gray-800 px-1.5 py-0.5 rounded-md transition-colors">
-                <span className={cn("font-bold text-gray-400 dark:text-gray-500", compactMode ? "text-[10px]" : "text-xs")}>{patient.age}y</span>
-                <span className="text-[10px] font-black text-gray-300 dark:text-gray-600">/</span>
-                <span className={cn(
-                  "font-black",
-                  compactMode ? "text-[10px]" : "text-xs",
-                  patient.sex === 'M' ? "text-blue-500 dark:text-blue-400" : patient.sex === 'F' ? "text-pink-500 dark:text-pink-400" : "text-purple-500 dark:text-purple-400"
-                )}>
-                  {patient.sex}
-                </span>
+            <div className="flex items-center gap-1 flex-wrap">
+              <input 
+                className={cn(
+                  "font-black text-gray-900 dark:text-white tracking-tight bg-transparent border-none p-0 focus:ring-0 w-16",
+                  compactMode ? "text-base" : "text-2xl"
+                )}
+                value={patient.initials || ''}
+                onChange={(e) => onUpdate(patient.id, { initials: e.target.value.toUpperCase().slice(0, 4) })}
+                onClick={(e) => e.stopPropagation()}
+                maxLength={4}
+              />
+              <div className="flex flex-col mt-1.5">
+                <div className="flex items-center gap-1 px-1 py-0.5 rounded-md transition-colors min-h-[28px]">
+                  <div className="flex items-center">
+                    <input 
+                      className={cn(
+                        "data-value font-bold text-gray-600 dark:text-gray-300 bg-transparent border-none p-0 focus:ring-0 w-8 text-right",
+                        compactMode ? "text-xs" : "text-sm"
+                      )}
+                      inputMode="numeric"
+                      value={patient.age.replace(/[^0-9]/g, '') || ''}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(/[^0-9]/g, '');
+                        const unit = patient.age.replace(/[0-9]/g, '') || 'y';
+                        onUpdate(patient.id, { age: val + unit });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <select 
+                      className={cn(
+                        "data-value font-bold text-gray-400 dark:text-gray-500 bg-transparent border-none p-0 focus:ring-0 appearance-none cursor-pointer ml-0.5",
+                        compactMode ? "text-[10px]" : "text-xs"
+                      )}
+                      value={patient.age.replace(/[0-9]/g, '') || 'y'}
+                      onChange={(e) => {
+                        const unit = e.target.value;
+                        const val = patient.age.replace(/[^0-9]/g, '') || '';
+                        onUpdate(patient.id, { age: val + unit });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <option value="y">y</option>
+                      <option value="m">m</option>
+                      <option value="d">d</option>
+                    </select>
+                  </div>
+                  <span className="text-[10px] font-black text-gray-300 dark:text-gray-600 mx-1">/</span>
+                  <div className="relative group/sex">
+                    <button 
+                      className={cn(
+                        "transition-all p-1 rounded-md hover:bg-gray-100 dark:hover:bg-gray-800 flex items-center justify-center",
+                        patient.sex === 'M' ? "text-blue-500 dark:text-blue-400" : 
+                        patient.sex === 'F' ? "text-pink-500 dark:text-pink-400" : 
+                        "text-purple-500 dark:text-purple-400"
+                      )}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {patient.sex === 'M' ? <Mars size={compactMode ? 12 : 14} /> : 
+                       patient.sex === 'F' ? <Venus size={compactMode ? 12 : 14} /> : 
+                       <CircleDot size={compactMode ? 12 : 14} />}
+                    </button>
+                    <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700 rounded-lg shadow-xl opacity-0 invisible group-hover/sex:opacity-100 group-hover/sex:visible transition-all z-50 p-1 flex flex-col gap-1">
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onUpdate(patient.id, { sex: 'M' }); }}
+                        className={cn("p-1.5 rounded-md hover:bg-blue-50 dark:hover:bg-blue-900/30", patient.sex === 'M' ? "text-blue-500" : "text-gray-400")}
+                      >
+                        <Mars size={14} />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onUpdate(patient.id, { sex: 'F' }); }}
+                        className={cn("p-1.5 rounded-md hover:bg-pink-50 dark:hover:bg-pink-900/30", patient.sex === 'F' ? "text-pink-500" : "text-gray-400")}
+                      >
+                        <Venus size={14} />
+                      </button>
+                      <button 
+                        onClick={(e) => { e.stopPropagation(); onUpdate(patient.id, { sex: 'Other' }); }}
+                        className={cn("p-1.5 rounded-md hover:bg-purple-50 dark:hover:bg-purple-900/30", patient.sex === 'Other' ? "text-purple-500" : "text-gray-400")}
+                      >
+                        <CircleDot size={14} />
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Epic Vitals Display */}
+                {patient.vitals && !compactMode && (
+                  <div className="flex items-center gap-2 mb-1.5 py-0.5 px-1.5 bg-gray-50/50 dark:bg-gray-800/30 rounded-lg border border-gray-100/50 dark:border-gray-700/50 w-fit ml-1">
+                    <div className="flex items-center gap-1">
+                      <span className="text-[6px] font-black text-gray-400 uppercase tracking-tighter">HR</span>
+                      <span className={cn(
+                        "text-[9px] font-black",
+                        parseInt(patient.vitals.hr || '0') > 150 ? "text-red-500" : "text-gray-600 dark:text-gray-400"
+                      )}>{patient.vitals.hr}</span>
+                    </div>
+                    <div className="w-px h-3 bg-gray-200 dark:bg-gray-700" />
+                    <div className="flex items-center gap-1">
+                      <span className="text-[6px] font-black text-gray-400 uppercase tracking-tighter">BP</span>
+                      <span className="text-[9px] font-black text-gray-600 dark:text-gray-400">{patient.vitals.bp}</span>
+                    </div>
+                    <div className="w-px h-3 bg-gray-200 dark:bg-gray-700" />
+                    <div className="flex items-center gap-1">
+                      <span className="text-[6px] font-black text-gray-400 uppercase tracking-tighter">T</span>
+                      <span className={cn(
+                        "text-[9px] font-black",
+                        (parseFloat(patient.vitals.temp || '98.6')) > 100.4 ? "text-red-500" : "text-gray-600 dark:text-gray-400"
+                      )}>{patient.vitals.temp}</span>
+                    </div>
+                  </div>
+                )}
+                
+                {(patient.age.includes('d') || patient.age.includes('m')) && (
+                  <div className="flex items-center gap-0.5 text-[8px] font-bold text-gray-400 dark:text-gray-500 mt-1 pl-1">
+                    <span className="opacity-60">(ex-</span>
+                    <input 
+                      type="number"
+                      max={45}
+                      className="w-4 bg-transparent border-none p-0 focus:ring-0 text-center text-[8px] font-black text-blue-500 dark:text-blue-400"
+                      value={patient.gestationalAge?.weeks || ''}
+                      onChange={(e) => {
+                        const val = Math.min(45, parseInt(e.target.value) || 0);
+                        onUpdate(patient.id, { gestationalAge: { ...patient.gestationalAge, weeks: val, days: patient.gestationalAge?.days || 0 } });
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                      placeholder="__"
+                    />
+                    <span className="opacity-60">w</span>
+                    <select 
+                      className="bg-transparent border-none p-0 focus:ring-0 appearance-none cursor-pointer text-[8px] font-black text-blue-500 dark:text-blue-400 w-3 text-center"
+                      value={patient.gestationalAge?.days || 0}
+                      onChange={(e) => onUpdate(patient.id, { gestationalAge: { ...patient.gestationalAge, weeks: patient.gestationalAge?.weeks || 0, days: parseInt(e.target.value) || 0 } })}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <option value={0}>_</option>
+                      {[1,2,3,4,5,6,7].map(d => <option key={d} value={d}>{d}</option>)}
+                    </select>
+                    <span className="opacity-60">d)</span>
+                  </div>
+                )}
               </div>
               {patient.isCompleted && (
                 <div className="bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 px-1.5 py-0.5 rounded-md text-[8px] md:text-[10px] font-black uppercase flex items-center gap-1">
@@ -489,7 +590,7 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                   compactMode ? "text-[9px]" : "text-[11px]"
                 )}
                 rows={2}
-                placeholder="Chief Complaint..."
+                placeholder="Presents with:..."
                 value={patient.chiefComplaint || ''}
                 onChange={(e) => onUpdate(patient.id, { chiefComplaint: e.target.value })}
                 onClick={(e) => e.stopPropagation()}
@@ -504,7 +605,6 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                   getStatusStyle(patient.status)
                 )}
               >
-                {colorBlindMode && <span className="mr-1">{getStatusSymbol(patient.status)}</span>}
                 {patient.status}
               </motion.div>
             </div>
@@ -739,26 +839,46 @@ export const PatientCard: React.FC<PatientCardProps> = ({
             )}
           </div>
           
-          <div className="flex items-center justify-between md:justify-end gap-4 border-t border-gray-100 md:border-t-0 pt-2 md:pt-0">
-            <motion.button 
-              whileTap={{ scale: 0.95 }}
-              onClick={toggleSeenState}
-              className={cn(
-                "bg-gray-100 dark:bg-gray-800 hover:bg-gray-200 dark:hover:bg-gray-700 rounded-xl font-black text-gray-600 dark:text-gray-300 uppercase tracking-tight transition-all flex items-center gap-2 shadow-sm",
-                compactMode ? "px-3 py-2 text-[9px]" : "px-4 py-2.5 text-[11px]"
-              )}
-            >
-              <Edit2 size={compactMode ? 10 : 14} />
-              {patient.seenState}
-            </motion.button>
+          <div className="flex items-center justify-between md:justify-end gap-2 border-t border-gray-100 md:border-t-0 pt-2 md:pt-0">
+            <div className="flex items-center gap-1.5">
+              <motion.button 
+                whileTap={{ scale: 0.95 }}
+                onClick={toggleFellowSeen}
+                className={cn(
+                  "rounded-xl font-black uppercase tracking-tight transition-all flex items-center gap-1.5 shadow-sm border",
+                  compactMode ? "px-2.5 py-1.5 text-[8px]" : "px-3 py-2 text-[10px]",
+                  patient.fellowSeen 
+                    ? "bg-green-500 text-white border-green-600" 
+                    : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-transparent hover:bg-gray-200 dark:hover:bg-gray-700"
+                )}
+              >
+                {patient.fellowSeen ? <CheckCircle2 size={compactMode ? 10 : 12} /> : <User size={compactMode ? 10 : 12} />}
+                Fellow
+              </motion.button>
+
+              <motion.button 
+                whileTap={{ scale: 0.95 }}
+                onClick={toggleAttendingSeen}
+                className={cn(
+                  "rounded-xl font-black uppercase tracking-tight transition-all flex items-center gap-1.5 shadow-sm border",
+                  compactMode ? "px-2.5 py-1.5 text-[8px]" : "px-3 py-2 text-[10px]",
+                  patient.attendingSeen 
+                    ? "bg-green-500 text-white border-green-600" 
+                    : "bg-gray-100 dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-transparent hover:bg-gray-200 dark:hover:bg-gray-700"
+                )}
+              >
+                {patient.attendingSeen ? <CheckCircle2 size={compactMode ? 10 : 12} /> : <Users size={compactMode ? 10 : 12} />}
+                Attending
+              </motion.button>
+            </div>
             
-            <div className="flex items-center gap-3">
+            <div className="flex items-center gap-2">
               <div className={cn(
                 "flex items-center gap-3 bg-gray-50 dark:bg-gray-800/50 rounded-xl border border-gray-100 dark:border-gray-700 shadow-sm",
                 compactMode ? "px-3 py-2" : "px-4 py-2.5"
               )}>
                 <Clock size={compactMode ? 14 : 18} style={{ color: getTimerColor(elapsed) }} />
-                <span className={cn("font-black tabular-nums", compactMode ? "text-sm" : "text-base")} style={{ color: getTimerColor(elapsed) }}>
+                <span className={cn("data-value font-black tabular-nums", compactMode ? "text-sm" : "text-base")} style={{ color: getTimerColor(elapsed) }}>
                   {formatTime(elapsed)}
                 </span>
               </div>
@@ -784,62 +904,58 @@ export const PatientCard: React.FC<PatientCardProps> = ({
       </div>
 
       {isExpanded && (
-        <div className="px-3 pb-4 pt-2 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-4 relative z-10">
-          {/* Team & Notes */}
-          <div className="space-y-3">
+        <div className="px-3 pb-4 pt-2 border-t border-gray-100 grid grid-cols-1 md:grid-cols-2 gap-6 relative z-10">
+          {/* Clinical Management */}
+          <div className="space-y-4">
             <div>
-              <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">Patient Details</h4>
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-gray-400">Initials</label>
-                  <input 
-                    className="w-full text-xs p-2 border border-gray-200 rounded-lg"
-                    value={patient.initials || ''}
-                    onChange={(e) => onUpdate(patient.id, { initials: e.target.value.toUpperCase() })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-gray-400 dark:text-gray-500">Age</label>
-                  <input 
-                    className="w-full text-xs p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
-                    value={patient.age || ''}
-                    onChange={(e) => onUpdate(patient.id, { age: e.target.value })}
-                  />
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-gray-400 dark:text-gray-500">Sex</label>
-                  <select 
-                    className="w-full text-xs p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
-                    value={patient.sex || 'M'}
-                    onChange={(e) => onUpdate(patient.id, { sex: e.target.value as 'M' | 'F' | 'Other' })}
-                  >
-                    <option value="M">M</option>
-                    <option value="F">F</option>
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div className="space-y-1">
-                  <label className="text-[9px] font-bold text-gray-400 dark:text-gray-500">Room</label>
-                  <input 
-                    className="w-full text-xs p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
-                    value={patient.room || ''}
-                    onChange={(e) => onUpdate(patient.id, { room: e.target.value })}
-                  />
-                </div>
-              </div>
-              <div className="mt-2 space-y-1">
-                <label className="text-[9px] font-bold text-gray-400 dark:text-gray-500">Chief Complaint</label>
-                <input 
-                  className="w-full text-xs p-2 border border-gray-200 dark:border-gray-700 rounded-lg bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
-                  value={patient.chiefComplaint || ''}
-                  onChange={(e) => onUpdate(patient.id, { chiefComplaint: e.target.value })}
-                />
+              <h4 className="col-header mb-2 flex items-center gap-1.5 opacity-100">
+                <ClipboardList size={12} className="text-blue-500" /> CLINICAL PLAN & DISPOSITION
+              </h4>
+              <textarea 
+                className="w-full text-xs p-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white h-32 focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm resize-none font-medium"
+                placeholder="What is the plan for this patient? (e.g., Awaiting labs, then discharge if normal...)"
+                value={patient.operationalNotes || ''}
+                onChange={(e) => onUpdate(patient.id, { operationalNotes: e.target.value })}
+                onClick={(e) => e.stopPropagation()}
+              />
+            </div>
+
+            <div>
+              <h4 className="col-header mb-2 flex items-center gap-1.5 opacity-100">
+                <MessageSquare size={12} className="text-purple-500" /> SHIFT HANDOFF SUMMARY
+              </h4>
+              <textarea 
+                className="w-full text-xs p-3 border border-gray-200 dark:border-gray-700 rounded-xl bg-gray-50 dark:bg-gray-900/50 text-gray-900 dark:text-white h-24 focus:ring-2 focus:ring-purple-500 outline-none transition-all shadow-inner resize-none italic"
+                placeholder="Concise summary for the next team..."
+              />
+            </div>
+          </div>
+
+          {/* Quick Actions & Team */}
+          <div className="space-y-4">
+            <div>
+              <h4 className="col-header mb-2 flex items-center gap-1.5 opacity-100">
+                <Stethoscope size={12} className="text-green-500" /> QUICK ACTIONS
+              </h4>
+              <div className="grid grid-cols-2 gap-2">
+                <button className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-[10px] font-bold text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors shadow-sm">
+                  <Phone size={12} /> Page Consultant
+                </button>
+                <button className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-[10px] font-bold text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors shadow-sm">
+                  <Users size={12} /> Update Family
+                </button>
+                <button className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-[10px] font-bold text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors shadow-sm">
+                  <ClipboardList size={12} /> Review Vitals
+                </button>
+                <button className="flex items-center gap-2 px-3 py-2 bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-xl text-[10px] font-bold text-gray-600 dark:text-gray-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 transition-colors shadow-sm">
+                  <AlertCircle size={12} /> Flag for Review
+                </button>
               </div>
             </div>
 
             <div>
-              <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2 flex items-center gap-1.5">
-                <Users size={12} /> ASSIGNED TEAM
+              <h4 className="col-header mb-2 flex items-center gap-1.5 opacity-100">
+                <Users size={12} className="text-orange-500" /> ASSIGNED TEAM
               </h4>
               <div className="flex flex-wrap gap-2">
                 {patient.assignedTeam.length > 0 ? (
@@ -868,99 +984,40 @@ export const PatientCard: React.FC<PatientCardProps> = ({
                 )}
               </div>
             </div>
-
-            <div>
-              <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">OPERATIONAL NOTES</h4>
-              <p className="text-[9px] text-red-500 font-bold mb-1.5 flex items-center gap-1">⚠️ DO NOT ENTER PHI</p>
-              <textarea 
-                className="w-full text-xs p-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white h-24 focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm"
-                placeholder="Enter non-PHI notes here..."
-                value={patient.operationalNotes || ''}
-                onChange={(e) => onUpdate(patient.id, { operationalNotes: e.target.value })}
-                onClick={(e) => e.stopPropagation()}
-              />
-            </div>
           </div>
 
-          {/* Workflow Flags Removed */}
-
-          {/* Status Control */}
-          <div className="space-y-3">
-              <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-2">STATUS CONTROL</h4>
-              <select 
-                className="w-full text-xs p-2.5 border border-gray-200 dark:border-gray-700 rounded-xl bg-white dark:bg-gray-800 text-gray-900 dark:text-white focus:ring-2 focus:ring-blue-500 outline-none transition-all shadow-sm"
-                value={patient.status}
-                onChange={(e) => onUpdate(patient.id, { status: e.target.value as any })}
-              >
-                {['New', 'Staff', 'Work-up', 'ED Observation', 'Likely Discharge', 'Likely Admit', 'Discharge', 'Admit'].map(s => (
-                  <option key={s} value={s}>{s}</option>
-                ))}
-              </select>
-
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onUpdate(patient.id, { 
-                    workflowFlags: { 
-                      ...patient.workflowFlags, 
-                      boarding: !patient.workflowFlags?.boarding 
-                    } 
-                  });
-                }}
-                className={cn(
-                  "w-full flex items-center justify-between px-3 py-2.5 rounded-xl border transition-all text-xs font-bold",
-                  patient.workflowFlags?.boarding 
-                    ? "bg-red-50 dark:bg-red-900/20 border-red-200 dark:border-red-800/50 text-red-700 dark:text-red-400" 
-                    : "bg-white dark:bg-gray-800 border-gray-200 dark:border-gray-700 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700"
-                )}
-              >
-                <div className="flex items-center gap-2">
-                  <Bed size={14} className={patient.workflowFlags?.boarding ? "text-red-500 dark:text-red-400" : "text-gray-400 dark:text-gray-500"} />
-                  <span>Boarding Status</span>
-                </div>
-                <div className={cn(
-                  "w-8 h-4 rounded-full relative transition-colors",
-                  patient.workflowFlags?.boarding ? "bg-red-500 dark:bg-red-600" : "bg-gray-200 dark:bg-gray-700"
-                )}>
-                  <div className={cn(
-                    "absolute top-0.5 w-3 h-3 bg-white dark:bg-gray-200 rounded-full transition-all",
-                    patient.workflowFlags?.boarding ? "left-[18px]" : "left-0.5"
-                  )} />
-                </div>
-              </button>
-            </div>
-
-            <div className="pt-4 flex flex-wrap gap-3 justify-between items-center">
-              <div className="flex gap-2">
-                <motion.button 
-                  whileTap={{ scale: 0.95 }}
-                  onClick={(e) => { e.stopPropagation(); onComplete(patient.id); }}
-                  className={cn(
-                    "flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md",
-                    patient.isCompleted 
-                      ? "bg-green-100 text-green-700 border border-green-200" 
-                      : "bg-green-600 text-white border border-green-700 hover:bg-green-700 active:bg-green-800"
-                  )}
-                >
-                  <CheckCircle2 size={16} />
-                  {patient.isCompleted ? 'Re-open' : 'Complete Encounter'}
-                </motion.button>
-              </div>
-              
+          {/* Bottom Actions */}
+          <div className="md:col-span-2 pt-4 flex flex-wrap gap-3 justify-between items-center border-t border-gray-100 dark:border-gray-800">
+            <div className="flex gap-2">
               <motion.button 
                 whileTap={{ scale: 0.95 }}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  if (confirm('Are you sure you want to delete this patient? This action cannot be undone.')) {
-                    onDelete(patient.id);
-                  }
-                }}
-                className="flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors border border-transparent hover:border-red-100 dark:hover:border-red-800/50"
+                onClick={(e) => { e.stopPropagation(); onComplete(patient.id); }}
+                className={cn(
+                  "flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest transition-all shadow-md",
+                  patient.isCompleted 
+                    ? "bg-green-100 text-green-700 border border-green-200" 
+                    : "bg-green-600 text-white border border-green-700 hover:bg-green-700 active:bg-green-800"
+                )}
               >
-                <X size={16} />
-                Delete Patient
+                <CheckCircle2 size={16} />
+                {patient.isCompleted ? 'Re-open' : 'Complete Encounter'}
               </motion.button>
             </div>
+            
+            <motion.button 
+              whileTap={{ scale: 0.95 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm('Are you sure you want to delete this patient? This action cannot be undone.')) {
+                  onDelete(patient.id);
+                }
+              }}
+              className="flex items-center gap-2 px-4 py-3 rounded-xl text-xs font-black uppercase tracking-widest text-red-500 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors border border-transparent hover:border-red-100 dark:hover:border-red-800/50"
+            >
+              <X size={16} />
+              Delete Patient
+            </motion.button>
+          </div>
         </div>
       )}
     </motion.div>

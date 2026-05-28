@@ -24,36 +24,8 @@ export function getStatusColor(status: string) {
   }
 }
 
-export function getStatusStyle(status: string, colorBlindMode: boolean = false) {
-  const base = getStatusColor(status);
-  if (!colorBlindMode) return base;
-
-  // Add patterns/indicators for color-blind mode
-  switch (status) {
-    case 'New': return `${base} ring-2 ring-inset ring-black border-4 border-double border-white`;
-    case 'Staff': return `${base} border-2 border-dashed border-black`;
-    case 'Work-up': return `${base} ring-2 ring-inset ring-white border-2 border-dotted border-black`;
-    case 'ED Observation': return `${base} border-4 border-solid border-white`;
-    case 'Likely Discharge': return `${base} border-2 border-double border-black`;
-    case 'Likely Admit': return `${base} border-2 border-dotted border-white`;
-    case 'Discharge': return `${base} ring-2 ring-inset ring-black`;
-    case 'Admit': return `${base} ring-2 ring-inset ring-white`;
-    default: return base;
-  }
-}
-
-export function getStatusSymbol(status: string) {
-  switch (status) {
-    case 'New': return '●';
-    case 'Staff': return '◆';
-    case 'Work-up': return '▲';
-    case 'ED Observation': return '■';
-    case 'Likely Discharge': return '○';
-    case 'Likely Admit': return '◇';
-    case 'Discharge': return '△';
-    case 'Admit': return '□';
-    default: return '';
-  }
+export function getStatusStyle(status: string) {
+  return getStatusColor(status);
 }
 
 export function getTimerColor(seconds: number) {
@@ -74,11 +46,11 @@ export function getTimerColor(seconds: number) {
 
 export function getRoleColor(role: string) {
   switch (role) {
-    case 'attending': return 'bg-red-100 dark:bg-red-900/30 text-red-700 dark:text-red-400 border-red-200 dark:border-red-800/50';
-    case 'fellow': return 'bg-blue-100 dark:bg-blue-900/30 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-800/50';
-    case 'resident': return 'bg-green-100 dark:bg-green-900/30 text-green-700 dark:text-green-400 border-green-200 dark:border-green-800/50';
-    case 'student': return 'bg-yellow-100 dark:bg-yellow-900/30 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800/50';
-    case 'nurse': return 'bg-purple-100 dark:bg-purple-900/30 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-800/50';
+    case 'attending': return 'bg-red-100 dark:bg-red-900 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800';
+    case 'fellow': return 'bg-blue-100 dark:bg-blue-900 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+    case 'resident': return 'bg-green-100 dark:bg-green-900 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800';
+    case 'student': return 'bg-yellow-100 dark:bg-yellow-900 text-yellow-700 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800';
+    case 'nurse': return 'bg-purple-100 dark:bg-purple-900 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800';
     default: return 'bg-gray-100 dark:bg-gray-800 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-700';
   }
 }
@@ -97,11 +69,15 @@ export function getStatusGradient(status: string) {
   }
 }
 
-export function getSeenBorderStyle(seenState: string) {
-  switch (seenState) {
-    case 'To Be Seen': return 'border-dashed border-2 border-gray-400 dark:border-gray-600';
-    case 'Seen by Fellow': return 'border-solid border-4 border-blue-600 dark:border-blue-500';
-    case 'Seen by Attending': return 'border-double border-8 border-purple-800 dark:border-purple-600';
-    default: return 'border-solid border-2 border-gray-200 dark:border-gray-800';
+export function getSeenBorderStyle(fellowSeen: boolean, attendingSeen: boolean) {
+  if (fellowSeen && attendingSeen) {
+    return 'border-[4px] border-blue-600 ring-[4px] ring-purple-800 ring-offset-0 z-10';
   }
+  if (fellowSeen) {
+    return 'border-[4px] border-blue-600';
+  }
+  if (attendingSeen) {
+    return 'border-[4px] border-purple-800';
+  }
+  return 'border-2 border-dashed border-gray-300 dark:border-gray-700';
 }
