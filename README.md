@@ -1,20 +1,31 @@
-<div align="center">
-<img width="1200" height="475" alt="GHBanner" src="https://ai.google.dev/static/site-assets/images/share-ais-513315318.png" />
-</div>
+# PEM FlowMaster
 
-# Run and deploy your AI Studio app
+Pediatric Emergency Medicine clinical pathway navigator.
 
-This contains everything you need to run your app locally.
+This is the separated development repository for PEM FlowMaster. Once stable, the production build can be embedded into the CloseDose repository under `public/flowmaster/` and served from `https://closedose.com/flowmaster`.
 
-View your app in AI Studio: https://ai.studio/apps/d0185fac-4ec9-421e-8328-56f86ffef3f6
+## Run locally
 
-## Run Locally
+```bash
+npm install
+npm run dev
+```
 
-**Prerequisites:**  Node.js
+## Build
 
+```bash
+npm run build
+```
 
-1. Install dependencies:
-   `npm install`
-2. Set the `GEMINI_API_KEY` in [.env.local](.env.local) to your Gemini API key
-3. Run the app:
-   `npm run dev`
+## Starter pathways
+
+- Fever by age
+- Respiratory distress
+- Abdominal pain / vomiting
+- Seizure
+- Head injury
+- Limp / refusal to walk
+
+## Product intent
+
+PEM FlowMaster is intended to function as an ED-facing clinical pathway navigator: chief complaint + age/risk context → immediate danger screen → can’t-miss diagnoses → branch-specific workup → reassessment checkpoints → disposition readiness.
