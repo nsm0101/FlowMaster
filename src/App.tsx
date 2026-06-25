@@ -1,86 +1,123 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, GitBranch, RefreshCcw, Search, Stethoscope } from 'lucide-react';
+import { createSnapshot, getNode, makeDecisionStep, matchPathways } from './engine/pathwayEngine';
+import { getPathwayById, pathwayRegistry } from './pathways';
+import type { DecisionStep, PatientContext } from './types/flowmaster';
 
-type Node = { id:string; title:string; prompt:string; options?:{label:string; next:string; flags?:string[]; actions?:string[]}[]; actions?:string[]; cantMiss?:string[]; reassess?:string[]; terminal?:boolean };
-type Pathway = { id:string; title:string; complaints:string[]; tags:string[]; acuity:string; warning:string; start:string; nodes:Record<string, Node> };
-type Patient = { complaint:string; age:number; unit:'days'|'months'|'years'; weight?:number; appearance:'well'|'ill'|'toxic'|'unstable'; temp?:number; spo2?:number; notes:string };
-type Step = { nodeId:string; title:string; answer:string; at:string; flags:string[]; actions:string[] };
+const emptyPatient: PatientContext = { complaint: '', age: 5, unit: 'years', appearance: 'well', notes: '' };
 
-const T = (id:string,title:string,prompt:string,actions:string[]=[]):Node => ({id,title,prompt,actions,terminal:true});
-const baseDanger = ['ABCDE assessment','Full vital signs','Weight in kg','Immediate senior/attending awareness if unstable'];
-const pathways:Pathway[] = [
-  { id:'fever', title:'Fever by Age', complaints:['fever','febrile','temperature'], tags:['infection','sbi','neonate'], acuity:'emergent', warning:'Age-based fever pathway; defer to local febrile infant policy for final testing and antibiotic thresholds.', start:'entry', nodes:{
-    entry:{id:'entry',title:'Immediate danger screen',prompt:'Toxic/unstable, poor perfusion, respiratory failure, AMS, petechiae/purpura, or age ≤28 days?',cantMiss:['Sepsis','Meningitis','HSV','UTI/pyelonephritis','Pneumonia','Kawasaki/MIS-C'],actions:baseDanger,options:[{label:'Yes — high risk',next:'high',flags:['high-risk fever'],actions:['Sepsis bundle consideration','Cultures and antibiotics when indicated']},{label:'No — age stratify',next:'age'}]},
-    high:{id:'high',title:'High-risk fever',prompt:'Treat first and diagnose in parallel.',actions:['Oxygen/monitoring','IV/IO access','Glucose if altered','Blood and urine cultures','LP if meningitis concern or young infant pathway','Empiric antibiotics; add acyclovir if HSV risk'],reassess:['Perfusion, mental status, urine output, antibiotic time'],options:[{label:'Stabilized but needs inpatient care',next:'admit'},{label:'Shock/respiratory failure/AMS persists',next:'icu'}]},
-    age:{id:'age',title:'Age group',prompt:'Select the fever age branch.',options:[{label:'0–28 days',next:'neo'},{label:'29–60 days',next:'infant60'},{label:'61–90 days',next:'infant90'},{label:'3–36 months',next:'toddler'},{label:'>36 months/adolescent',next:'older'}]},
-    neo:{id:'neo',title:'Febrile neonate',prompt:'High risk even when well appearing.',actions:['Blood culture','Urine culture by cath/SPA','CBC/inflammatory markers per local pathway','LP unless deferred by local attending pathway','Empiric antibiotics','Consider HSV testing/acyclovir'],options:[{label:'Admit',next:'admit'},{label:'Unstable',next:'icu'}]},
-    infant60:{id:'infant60',title:'29–60 days',prompt:'Risk stratify with UA and inflammatory markers.',actions:['UA and urine culture','Blood culture','CBC/inflammatory markers','LP if high-risk markers, abnormal neuro exam, or concern','Disposition by risk group and follow-up reliability'],options:[{label:'Low risk/reliable follow-up',next:'discharge'},{label:'High risk/uncertain follow-up',next:'admit'}]},
-    infant90:{id:'infant90',title:'61–90 days',prompt:'Evaluate for UTI/SBI based on appearance and source.',actions:['UA/culture if no source or UTI risk','Blood work if ill appearing or no source','Viral testing only if it changes management'],options:[{label:'Low risk',next:'discharge'},{label:'High risk',next:'admit'}]},
-    toddler:{id:'toddler',title:'3–36 months',prompt:'Immunization status, height/duration, and source drive workup.',actions:['Look for AOM, pneumonia, UTI, cellulitis, meningitis signs','UA/culture by UTI risk','CXR if hypoxia/focal lung findings/tachypnea','Consider Kawasaki if fever ≥5 days'],options:[{label:'Source found/well',next:'discharge'},{label:'No source or concerning features',next:'admit'}]},
-    older:{id:'older',title:'Older child/adolescent fever',prompt:'Targeted evaluation by syndrome.',actions:['Focused exam for respiratory, abdominal, urinary, CNS, skin, bone/joint source','Test only if it changes treatment or disposition'],options:[{label:'Discharge criteria met',next:'discharge'},{label:'Admit criteria met',next:'admit'}]},
-    discharge:T('discharge','Discharge','Fever discharge readiness',['Well appearing','Hydration adequate','Caregiver understands antipyretic dosing','Return for toxic appearance, breathing trouble, dehydration, neck stiffness, seizure, new rash, or worsening']), admit:T('admit','Admit','Inpatient care indicated',['Handoff age, appearance, cultures, antibiotics, pending tests, reassessment needs']), icu:T('icu','ICU / transfer','Critical illness pathway',['PICU/transport activation','Airway/vasoactive plan','Closed-loop reassessment']) } },
-  { id:'resp', title:'Respiratory Distress', complaints:['respiratory distress','wheezing','shortness of breath','cough','bronchiolitis','asthma'], tags:['airway','breathing','asthma','bronchiolitis'], acuity:'emergent', warning:'Prioritize work of breathing, oxygenation, ventilation, and fatigue over diagnosis labels.', start:'entry', nodes:{
-    entry:{id:'entry',title:'Respiratory danger screen',prompt:'Apnea, cyanosis, exhaustion, altered mental status, persistent hypoxia, stridor at rest, or shock?',cantMiss:['Respiratory failure','Foreign body aspiration','Anaphylaxis','Sepsis','Pneumonia','DKA','Myocarditis'],actions:['Position airway','Oxygen','Continuous pulse ox/cardiorespiratory monitor','Prepare BVM/airway equipment if severe'],options:[{label:'Yes — impending/actual failure',next:'failure',flags:['respiratory failure risk'],actions:['Call RT/senior help','BVM/NIV/HFNC as appropriate']},{label:'No — classify pattern',next:'pattern'}]},
-    failure:{id:'failure',title:'Respiratory failure',prompt:'Support ventilation/oxygenation while identifying cause.',actions:['BVM if inadequate ventilation','HFNC/NIV if safe','Prepare RSI if worsening fatigue/AMS/airway protection issue','CXR/gas/labs when they change management','Treat likely cause immediately'],options:[{label:'Improves with noninvasive support',next:'admit'},{label:'Needs intubation/PICU',next:'icu'}]},
-    pattern:{id:'pattern',title:'Pattern recognition',prompt:'Dominant presentation?',options:[{label:'Wheezing',next:'wheeze'},{label:'Bronchiolitis infant',next:'bronch'},{label:'Stridor/barky cough',next:'stridor'},{label:'Focal fever/cough',next:'pna'},{label:'Sudden choking/asymmetric exam',next:'fb'}]},
-    wheeze:{id:'wheeze',title:'Wheezing/asthma',prompt:'Assess severity and response.',actions:['Albuterol/ipratropium for moderate-severe asthma','Systemic steroid when asthma exacerbation likely','Magnesium/continuous albuterol for severe or poor response','Reconsider diagnosis if first-time/asymmetric'],options:[{label:'Responds and stable',next:'discharge'},{label:'Persistent distress/O₂ need',next:'admit'},{label:'Exhaustion/AMS/silent chest',next:'icu'}]},
-    bronch:{id:'bronch',title:'Bronchiolitis',prompt:'Supportive care; avoid low-yield testing in typical cases.',actions:['Suction','Hydration assessment','Oxygen/HFNC if needed','Avoid routine bronchodilators/CXR/viral testing unless management changes'],options:[{label:'Feeding OK and no O₂',next:'discharge'},{label:'O₂/HFNC/dehydration/apnea risk',next:'admit'}]},
-    stridor:{id:'stridor',title:'Stridor',prompt:'Croup vs upper-airway emergency.',actions:['Dexamethasone for croup','Racemic epinephrine for stridor at rest','Minimize agitation if toxic/drooling/tripod','ENT/anesthesia if upper-airway emergency'],options:[{label:'Improves after observation',next:'discharge'},{label:'Persistent stridor/toxic',next:'admit'}]},
-    pna:{id:'pna',title:'Pneumonia pattern',prompt:'Fever/cough/focal findings or hypoxia.',actions:['CXR if hypoxia, focal exam, severe disease, or uncertain diagnosis','Antibiotics if bacterial pneumonia likely','Assess effusion/empyema if severe'],options:[{label:'Outpatient criteria met',next:'discharge'},{label:'Hypoxia/dehydration/severe',next:'admit'}]},
-    fb:{id:'fb',title:'Foreign body concern',prompt:'Sudden choking or asymmetric findings.',actions:['Avoid blind finger sweep','CXR views if stable','ENT/pulm/surgery consult for bronchoscopy if high suspicion'],options:[{label:'High suspicion',next:'admit'},{label:'Alternative likely',next:'discharge'}]},
-    discharge:T('discharge','Discharge','Respiratory discharge readiness',['Minimal work of breathing','Stable room-air oxygenation','Hydration adequate','Clear return precautions']), admit:T('admit','Admit','Needs respiratory monitoring/support',['Oxygen/HFNC need','Hydration support','Frequent bronchodilators','Serial respiratory scores']), icu:T('icu','PICU / airway','Critical respiratory illness',['PICU/transport','Airway plan','Escalation reassessment']) } },
-  { id:'abd', title:'Abdominal Pain / Vomiting', complaints:['abdominal pain','vomiting','diarrhea'], tags:['surgery','gi','dehydration'], acuity:'urgent', warning:'Repeat abdominal exams; consult early for peritonitis, torsion, obstruction, or bilious emesis.', start:'entry', nodes:{
-    entry:{id:'entry',title:'Danger screen',prompt:'Toxic, bilious emesis, peritonitis, severe dehydration, shock, testicular pain, pregnancy risk, or AMS?',cantMiss:['Appendicitis','Malrotation/volvulus','Intussusception','DKA','Sepsis','Ovarian/testicular torsion','Ectopic pregnancy'],actions:['Pain control and antiemetic','Hydration assessment','Glucose if ill/AMS/vomiting'],options:[{label:'Yes',next:'high'},{label:'No',next:'pattern'}]},
-    high:{id:'high',title:'High-risk abdomen',prompt:'Resuscitate and consult early.',actions:['NPO','IV access/fluids','Labs guided by pattern','Early surgery/OB/urology consult','Targeted imaging'],options:[{label:'Surgical/critical concern',next:'admit'},{label:'Benign serial exams',next:'discharge'}]},
-    pattern:{id:'pattern',title:'Pattern branch',prompt:'Most important syndrome?',options:[{label:'RLQ/periumbilical migration',next:'appy'},{label:'Intermittent severe pain/lethargy',next:'intuss'},{label:'Bilious emesis',next:'volvulus'},{label:'Vomiting/diarrhea predominant',next:'gastro'},{label:'GU/pelvic/testicular symptoms',next:'gu'}]},
-    appy:{id:'appy',title:'Appendicitis concern',prompt:'Risk stratify and image without delaying surgical care if peritonitis.',actions:['Serial abdominal exams','US appendix first when available','Labs if moderate/high risk','Surgery consult if positive imaging or high clinical concern'],options:[{label:'Positive/high concern',next:'admit'},{label:'Low concern after reassessment',next:'discharge'}]},
-    intuss:{id:'intuss',title:'Intussusception',prompt:'Episodic pain/vomiting/lethargy.',actions:['Abdominal US','IV access if ill/dehydrated','Air/contrast enema pathway if confirmed'],options:[{label:'Confirmed/high concern',next:'admit'},{label:'Negative and well',next:'discharge'}]},
-    volvulus:{id:'volvulus',title:'Bilious emesis / volvulus',prompt:'Bilious vomiting is obstruction until proven otherwise.',actions:['NPO','IV fluids','Urgent upper GI/surgery consult','Do not discharge until addressed'],options:[{label:'Concern persists',next:'admit'}]},
-    gastro:{id:'gastro',title:'Gastroenteritis/dehydration',prompt:'Hydration status and alternatives drive care.',actions:['Ondansetron when appropriate','Oral rehydration challenge','IV fluids if severe dehydration or failed ORT','Consider glucose/ketones/electrolytes if prolonged/ill'],options:[{label:'Tolerates PO',next:'discharge'},{label:'Fails PO/severe dehydration',next:'admit'}]},
-    gu:{id:'gu',title:'GU/pelvic/testicular branch',prompt:'Do not miss torsion, pregnancy-related emergencies, UTI/pyelo.',actions:['Testicular exam for males with abdominal pain/vomiting','Pregnancy test when applicable','UA/urine culture if urinary symptoms/fever','Pelvic US/OB-GYN if torsion/ectopic concern'],options:[{label:'Torsion/ectopic/high concern',next:'admit'},{label:'Low risk outpatient',next:'discharge'}]},
-    discharge:T('discharge','Discharge','Abdominal discharge readiness',['Pain controlled','Hydration adequate','Benign repeat exam','Return for RLQ pain, bilious emesis, blood, dehydration, worsening pain, testicular/pelvic pain']), admit:T('admit','Admit / consult','Needs inpatient/procedural care',['NPO status','Consult recommendations','Antibiotics/fluids/pain plan','Pending imaging/labs']) } },
-  { id:'seizure', title:'Seizure', complaints:['seizure','convulsion','status epilepticus','febrile seizure'], tags:['neuro','status'], acuity:'emergent', warning:'Stabilize ABCs and check glucose early. Time seizure duration and medication doses.', start:'entry', nodes:{
-    entry:{id:'entry',title:'Active seizure?',prompt:'Currently seizing, recurrent without baseline, or seizure >5 minutes?',cantMiss:['Status epilepticus','Hypoglycemia','Meningitis/encephalitis','Trauma/ICH','Toxic ingestion','Electrolyte derangement'],actions:['Position airway','Suction/O₂','Cardiac/pulse ox monitoring','Point-of-care glucose'],options:[{label:'Yes — status pathway',next:'status'},{label:'No — recovered/postictal',next:'recovered'}]},
-    status:{id:'status',title:'Status epilepticus',prompt:'Treat by time-based escalation.',actions:['Benzodiazepine per weight/local protocol','Second-line antiseizure medication if persistent','Prepare airway support','Labs: glucose, electrolytes, ASM levels if relevant','Consider infection/toxin/trauma causes'],options:[{label:'Terminates and returns toward baseline',next:'recovered'},{label:'Refractory/airway concern',next:'icu'}]},
-    recovered:{id:'recovered',title:'Recovered seizure',prompt:'Simple febrile, known epilepsy, or concerning/first seizure?',options:[{label:'Simple febrile pattern',next:'simple'},{label:'Known epilepsy with trigger',next:'known'},{label:'First afebrile or concerning',next:'complex'}]},
-    simple:{id:'simple',title:'Simple febrile seizure',prompt:'Generalized, <15 min, once in 24h, age 6mo–5y, baseline.',actions:['Identify fever source','No routine labs/imaging/EEG solely for simple febrile seizure','Caregiver education'],options:[{label:'Safe discharge',next:'discharge'},{label:'Fever source concerning',next:'complex'}]},
-    known:{id:'known',title:'Known epilepsy',prompt:'Identify trigger and safety.',actions:['Check ASM levels if applicable','Treat trigger','Rescue medication refill/plan','Neurology follow-up'],options:[{label:'Baseline and safe',next:'discharge'},{label:'Repeated seizures/med changes needed',next:'admit'}]},
-    complex:{id:'complex',title:'Complex/concerning seizure',prompt:'Broader evaluation.',actions:['Labs guided by presentation','Consider LP if meningitis/encephalitis concern','Neuroimaging if trauma/focal deficit/ICP signs/persistent AMS','Neurology consult as indicated'],options:[{label:'Admit/observe',next:'admit'},{label:'Critical care need',next:'icu'}]},
-    discharge:T('discharge','Discharge','Seizure safety plan',['Return for prolonged/recurrent seizure, persistent AMS, neck stiffness, respiratory issues, trauma','Rescue medication instructions if prescribed']), admit:T('admit','Admit/observe','Needs monitoring/workup',['Handoff seizure duration, meds/timing, glucose, neuro exam, pending studies']), icu:T('icu','PICU','Refractory status or airway/ventilation need',['PICU/transport','Continuous EEG if available','Infusion/airway plan']) } },
-  { id:'head', title:'Head Injury', complaints:['head injury','fall','concussion','trauma'], tags:['trauma','PECARN'], acuity:'urgent', warning:'Use validated head injury rules and judgment. Consider NAT when history/exam mismatch.', start:'entry', nodes:{
-    entry:{id:'entry',title:'Primary survey',prompt:'GCS abnormal, skull fracture signs, seizure, persistent AMS, focal neuro deficit, or unstable trauma?',cantMiss:['Intracranial hemorrhage','C-spine injury','Nonaccidental trauma','Skull fracture','Abusive head trauma'],actions:['ABCDE','C-spine precautions if indicated','Glucose if AMS','Analgesia/antiemetic'],options:[{label:'Yes — high risk',next:'high'},{label:'No — risk stratify',next:'age'}]},
-    high:{id:'high',title:'High-risk head trauma',prompt:'Image/consult/resuscitate as needed.',actions:['CT head likely indicated','Trauma/neurosurgery consult as appropriate','Labs if significant trauma/OR risk','Treat seizures/vomiting/pain'],options:[{label:'Critical findings/unstable',next:'icu'},{label:'Stable but needs observation',next:'admit'}]},
-    age:{id:'age',title:'Age group',prompt:'Select age nuance.',options:[{label:'<2 years',next:'under2'},{label:'≥2 years',next:'over2'}]},
-    under2:{id:'under2',title:'<2 years features',prompt:'Scalp hematoma except frontal, LOC ≥5 sec, severe mechanism, not acting normally?',actions:['Examine scalp/fontanelle','Clarify mechanism and developmental ability','Screen for abuse if inconsistent history/bruising'],options:[{label:'Intermediate feature present',next:'observe'},{label:'No risk features',next:'discharge'},{label:'Abuse concern',next:'nat'}]},
-    over2:{id:'over2',title:'≥2 years features',prompt:'Vomiting, LOC, severe headache, severe mechanism?',options:[{label:'Intermediate feature present',next:'observe'},{label:'No risk features',next:'discharge'},{label:'Concussion symptoms',next:'concussion'}]},
-    observe:{id:'observe',title:'Observation vs CT',prompt:'Shared decision based on worsening symptoms, multiple findings, age, reliability.',actions:['Serial neuro exams','PO challenge after vomiting improves','CT if worsening/multiple risk factors/unreliable observation/clinician concern'],options:[{label:'Worsens/CT positive',next:'admit'},{label:'Improves and reliable caregiver',next:'discharge'}]},
-    concussion:{id:'concussion',title:'Concussion',prompt:'No red flags; manage symptoms and return-to-activity.',actions:['Rest 24–48h then gradual return','No sports same day','School note as needed'],options:[{label:'Safe discharge',next:'discharge'}]},
-    nat:{id:'nat',title:'Possible abuse',prompt:'Protect child and broaden injury evaluation.',actions:['Child protection/social work','Skeletal survey/head imaging/labs per age/local pathway','Report as required','Avoid unsafe discharge'],options:[{label:'Child protection plan active',next:'admit'}]},
-    discharge:T('discharge','Discharge','Head injury precautions',['Return for worsening headache, repeated vomiting, confusion, seizure, weakness, abnormal behavior, difficult to wake','Concussion guidance if symptoms']), admit:T('admit','Admit/observe','Needs serial exams or specialty care',['Handoff neuro trend, imaging, meds, consults']), icu:T('icu','ICU/trauma transfer','Critical neuro/trauma care',['Neurosurgery/trauma/PICU','Airway and ICP-aware management']) } },
-  { id:'limp', title:'Limp / Refusal to Walk', complaints:['limp','leg pain','joint pain','refusal to walk'], tags:['MSK','infection','abuse'], acuity:'urgent', warning:'Local ortho/rheum/ID pathways should guide definitive management.', start:'entry', nodes:{
-    entry:{id:'entry',title:'Danger screen',prompt:'Fever, toxic appearance, severe pain, non-weight-bearing, neuro deficit, trauma concern, or unclear mechanism in young child?',cantMiss:['Septic arthritis','Osteomyelitis','Toddler fracture','Malignancy','NAT','SCFE','Testicular torsion referred pain'],actions:['Expose and examine hips to toes','Check testicles/abdomen when appropriate','Analgesia'],options:[{label:'Yes',next:'red'},{label:'No',next:'localize'}]},
-    red:{id:'red',title:'Red flag limp',prompt:'Differentiate infection, fracture, malignancy, hip emergency.',actions:['CBC/ESR/CRP if infection/malignancy concern','X-ray area of pain; include hip if unclear','US hip if effusion concern','Ortho consult if septic joint possible'],options:[{label:'Hot joint/septic arthritis concern',next:'septic'},{label:'Trauma or focal bony pain',next:'fracture'},{label:'Night pain/pallor/bruising/systemic symptoms',next:'malignancy'},{label:'Adolescent hip/knee pain',next:'scfe'}]},
-    localize:{id:'localize',title:'Localized vs transient',prompt:'Well appearing child with mild limp.',options:[{label:'Hip pain after viral illness',next:'synovitis'},{label:'Focal bony tenderness',next:'fracture'},{label:'Normal exam and improving',next:'discharge'}]},
-    septic:{id:'septic',title:'Septic arthritis/osteomyelitis',prompt:'Time-sensitive joint infection.',actions:['NPO','CBC/ESR/CRP/blood culture','Hip US if hip concern','Ortho consult before antibiotics if stable and aspiration planned','Antibiotics promptly if septic/toxic or after cultures/aspiration per plan'],options:[{label:'Admit/OR/IV antibiotics',next:'admit'}]},
-    fracture:{id:'fracture',title:'Fracture/occult injury',prompt:'Toddler fracture can be radiographically occult.',actions:['X-ray targeted region','Immobilize if clinical suspicion despite negative x-ray','Assess developmental mechanism and abuse risk'],options:[{label:'Fracture/high suspicion',next:'discharge'},{label:'Abuse concern',next:'nat'},{label:'No fracture and improving',next:'discharge'}]},
-    malignancy:{id:'malignancy',title:'Malignancy screen',prompt:'Systemic or atypical pain features.',actions:['CBC with differential','ESR/CRP','LDH/uric acid if concern','X-rays for bone lesions','Heme/onc consult if abnormal'],options:[{label:'Concerning labs/exam',next:'admit'},{label:'Reassuring',next:'discharge'}]},
-    scfe:{id:'scfe',title:'SCFE/hip emergency',prompt:'Adolescent hip, groin, thigh, or knee pain with limp.',actions:['AP pelvis/frog-leg lateral unless unstable slip concern','Non-weight-bearing','Ortho consult if SCFE'],options:[{label:'SCFE concern/confirmed',next:'admit'},{label:'Negative and well',next:'discharge'}]},
-    synovitis:{id:'synovitis',title:'Transient synovitis likely',prompt:'Diagnosis of exclusion in well child.',actions:['NSAID if safe','Reassess weight bearing','Strict return for fever/worse pain/non-weight-bearing'],options:[{label:'Improves and low concern',next:'discharge'},{label:'Persistent non-weight-bearing/fever',next:'septic'}]},
-    nat:{id:'nat',title:'Possible nonaccidental trauma',prompt:'Mechanism mismatch or concerning bruising/fracture pattern.',actions:['Child protection/social work','Skeletal survey/labs/head imaging by age/local pathway','Mandatory report as applicable'],options:[{label:'Safety plan/admit',next:'admit'}]},
-    discharge:T('discharge','Discharge','Safe limp discharge',['Analgesia plan','Return for fever, worsening pain, inability to bear weight, swelling/redness, night pain','Ortho/PCP follow-up as indicated']), admit:T('admit','Admit/consult','Needs inpatient or urgent specialty care',['Handoff weight-bearing status, imaging, labs, antibiotics timing, consult recommendations']) } }
-];
+function Tag({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) {
+  return <span className={`tag ${tone}`}>{children}</span>;
+}
 
-const empty:Patient={complaint:'',age:5,unit:'years',appearance:'well',notes:''};
-function ageBand(p:Patient){const d=p.unit==='days'?p.age:p.unit==='months'?p.age*30.4:p.age*365; const m=p.unit==='years'?p.age*12:p.unit==='months'?p.age:p.age/30.4; if(d<=28)return'0-28d'; if(d<=60)return'29-60d'; if(d<=90)return'61-90d'; if(m<=36)return'3-36mo'; if(m<144)return'child'; return'adolescent'}
-function Tag({children,tone='neutral'}:{children:React.ReactNode;tone?:string}){return <span className={`tag ${tone}`}>{children}</span>}
-function Panel({title,icon,children}:{title:string;icon?:React.ReactNode;children:React.ReactNode}){return <section className="panel"><h3>{icon}{title}</h3>{children}</section>}
-function List({items}:{items?:string[]}){return items?.length?<ul className="tight">{items.map((x,i)=><li key={i}>{x}</li>)}</ul>:<p className="muted">None listed.</p>}
+function Panel({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
+  return <section className="panel"><h3>{icon}{title}</h3>{children}</section>;
+}
 
-export default function App(){
- const [patient,setPatient]=useState<Patient>(empty); const [pid,setPid]=useState(pathways[0].id); const path=pathways.find(p=>p.id===pid)!; const [nodeId,setNodeId]=useState(path.start); const [history,setHistory]=useState<Step[]>([]); const [q,setQ]=useState(''); const node=path.nodes[nodeId]??path.nodes[path.start];
- const matches=useMemo(()=>{const c=patient.complaint.toLowerCase();return pathways.filter(p=>!c||p.complaints.some(x=>x.includes(c)||c.includes(x))||p.tags.some(t=>c.includes(t.toLowerCase())))},[patient.complaint]);
- const activeActions=Array.from(new Set([...history.flatMap(h=>h.actions),...(node.actions??[])])); const flags=Array.from(new Set(history.flatMap(h=>h.flags))); const cantMiss=Array.from(new Set([...(node.cantMiss??[]),...history.flatMap(h=>path.nodes[h.nodeId]?.cantMiss??[])])); const searchNodes=Object.values(path.nodes).filter(n=>[n.title,n.prompt,...(n.actions??[]),...(n.cantMiss??[])].join(' ').toLowerCase().includes(q.toLowerCase()));
- function choose(o:{label:string;next:string;flags?:string[];actions?:string[]}){setHistory(h=>[...h,{nodeId:node.id,title:node.title,answer:o.label,at:new Date().toLocaleTimeString(),flags:o.flags??[],actions:o.actions??[]}]);setNodeId(o.next)}
- function select(p:Pathway){setPid(p.id);setNodeId(p.start);setHistory([])} function back(){const prior=history[history.length-1];setHistory(h=>h.slice(0,-1));if(prior)setNodeId(prior.nodeId)} function reset(){setNodeId(path.start);setHistory([])}
- return <div className="app"><header className="hero"><div><p className="eyebrow">PEM FlowMaster MVP</p><h1>PEM FlowMaster</h1><p>Pediatric ED pathway navigator: chief complaint + age/risk context → danger screen → can’t-miss diagnoses → workup → reassessment → disposition.</p></div><div className="heroCard"><Stethoscope/><b>Clinical safety layer</b><span>ABCDE → branch → workup → reassess → disposition</span></div></header><main className="grid"><aside className="left"><Panel title="Patient context" icon={<ClipboardList/>}><label>Chief complaint<input value={patient.complaint} onChange={e=>setPatient({...patient,complaint:e.target.value})} placeholder="fever, limp, seizure..."/></label><div className="row"><label>Age<input type="number" value={patient.age} onChange={e=>setPatient({...patient,age:Number(e.target.value)})}/></label><label>Unit<select value={patient.unit} onChange={e=>setPatient({...patient,unit:e.target.value as Patient['unit']})}><option>days</option><option>months</option><option>years</option></select></label></div><div className="row"><label>Wt kg<input type="number" value={patient.weight??''} onChange={e=>setPatient({...patient,weight:e.target.value?Number(e.target.value):undefined})}/></label><label>SpO₂<input type="number" value={patient.spo2??''} onChange={e=>setPatient({...patient,spo2:e.target.value?Number(e.target.value):undefined})}/></label></div><label>Appearance<select value={patient.appearance} onChange={e=>setPatient({...patient,appearance:e.target.value as Patient['appearance']})}><option>well</option><option>ill</option><option>toxic</option><option>unstable</option></select></label><label>Notes<textarea value={patient.notes} onChange={e=>setPatient({...patient,notes:e.target.value})}/></label><div className="mini"><Tag tone="blue">Age band: {ageBand(patient)}</Tag>{patient.weight&&<Tag>{patient.weight} kg</Tag>}</div></Panel><Panel title="Pathways" icon={<GitBranch/>}>{(matches.length?matches:pathways).map(p=><button key={p.id} onClick={()=>select(p)} className={`pathBtn ${p.id===path.id?'active':''}`}><b>{p.title}</b><span>{p.complaints.slice(0,3).join(' · ')}</span></button>)}</Panel></aside><section className="center"><div className="pathHeader"><div><h2>{path.title}</h2><p>{path.warning}</p></div><div className="mini"><Tag tone={path.acuity==='emergent'?'danger':'warn'}>{path.acuity}</Tag>{path.tags.map(t=><Tag key={t}>{t}</Tag>)}</div></div><article className={`node ${node.terminal?'terminal':''}`}><p className="nodeType">{node.terminal?'terminal':'decision node'}</p><h2>{node.title}</h2><p className="prompt">{node.prompt}</p>{node.options?.length?<div className="options">{node.options.map(o=><button key={o.label} onClick={()=>choose(o)}>{o.label}</button>)}</div>:<div className="done"><CheckCircle2/> Terminal node reached</div>}<div className="controls"><button onClick={back} disabled={!history.length}><ArrowLeft/> Back</button><button onClick={reset}><RefreshCcw/> Reset</button></div></article><div className="twoCol"><Panel title="Actions now" icon={<ClipboardList/>}><List items={node.actions}/></Panel><Panel title="Reassessment" icon={<AlertTriangle/>}><List items={node.reassess}/></Panel></div><Panel title="Search current pathway" icon={<Search/>}><input value={q} onChange={e=>setQ(e.target.value)} placeholder="search nodes, actions, diagnoses"/>{q&&<div className="searchResults">{searchNodes.map(n=><button key={n.id} onClick={()=>setNodeId(n.id)}>{n.title}<span>{n.prompt}</span></button>)}</div>}</Panel></section><aside className="right"><Panel title="Can’t miss" icon={<AlertTriangle/>}><List items={cantMiss}/></Panel><Panel title="Active tasks"><List items={activeActions}/></Panel><Panel title="Flags">{flags.length?flags.map(f=><Tag key={f} tone="danger">{f}</Tag>):<p className="muted">No active flags.</p>}</Panel><Panel title="Timeline">{history.length?<ol className="timeline">{history.map((h,i)=><li key={i}><b>{h.title}</b><span>{h.answer} · {h.at}</span></li>)}</ol>:<p className="muted">No decisions yet.</p>}</Panel></aside></main><footer>This tool supports clinician decision-making and does not replace clinical judgment, local policy, or attending supervision.</footer></div>
+function List({ items }: { items?: string[] }) {
+  return items?.length ? <ul className="tight">{items.map((x, i) => <li key={i}>{x}</li>)}</ul> : <p className="muted">None listed.</p>;
+}
+
+export default function App() {
+  const [patient, setPatient] = useState<PatientContext>(emptyPatient);
+  const [pathwayId, setPathwayId] = useState(pathwayRegistry[0].id);
+  const pathway = getPathwayById(pathwayId);
+  const [nodeId, setNodeId] = useState(pathway.startNodeId);
+  const [history, setHistory] = useState<DecisionStep[]>([]);
+  const [query, setQuery] = useState('');
+
+  const currentNode = getNode(pathway, nodeId);
+  const snapshot = createSnapshot(pathway, currentNode, patient, history);
+  const matchedPathways = useMemo(() => matchPathways(pathwayRegistry, patient.complaint), [patient.complaint]);
+  const visiblePathways = matchedPathways.length ? matchedPathways : pathwayRegistry;
+  const searchNodes = Object.values(pathway.nodes).filter((node) =>
+    [node.title, node.prompt, ...(node.actions ?? []), ...(node.cantMiss ?? []), ...(node.dispositionCriteria ?? [])]
+      .join(' ')
+      .toLowerCase()
+      .includes(query.toLowerCase())
+  );
+
+  function selectPathway(id: string) {
+    const next = getPathwayById(id);
+    setPathwayId(id);
+    setNodeId(next.startNodeId);
+    setHistory([]);
+  }
+
+  function choose(option: NonNullable<typeof currentNode.options>[number]) {
+    const step = makeDecisionStep(pathway, currentNode, option.label, option.next, option.flags ?? [], option.actions ?? []);
+    setHistory((prior) => [...prior, step]);
+    setNodeId(option.next);
+  }
+
+  function back() {
+    const prior = history[history.length - 1];
+    setHistory((items) => items.slice(0, -1));
+    if (prior) setNodeId(prior.nodeId);
+  }
+
+  function reset() {
+    setNodeId(pathway.startNodeId);
+    setHistory([]);
+  }
+
+  return <div className="app">
+    <header className="hero">
+      <div>
+        <p className="eyebrow">PEM FlowMaster MVP</p>
+        <h1>PEM FlowMaster</h1>
+        <p>Pediatric ED pathway navigator: chief complaint + age/risk context → danger screen → can’t-miss diagnoses → workup → reassessment → disposition.</p>
+      </div>
+      <div className="heroCard"><Stethoscope /><b>Clinical safety layer</b><span>ABCDE → branch → workup → reassess → disposition</span></div>
+    </header>
+
+    <main className="grid">
+      <aside className="left">
+        <Panel title="Patient context" icon={<ClipboardList />}>
+          <label>Chief complaint<input value={patient.complaint} onChange={(e) => setPatient({ ...patient, complaint: e.target.value })} placeholder="fever, limp, seizure..." /></label>
+          <div className="row">
+            <label>Age<input type="number" value={patient.age} onChange={(e) => setPatient({ ...patient, age: Number(e.target.value) })} /></label>
+            <label>Unit<select value={patient.unit} onChange={(e) => setPatient({ ...patient, unit: e.target.value as PatientContext['unit'] })}><option>days</option><option>months</option><option>years</option></select></label>
+          </div>
+          <div className="row">
+            <label>Wt kg<input type="number" value={patient.weightKg ?? ''} onChange={(e) => setPatient({ ...patient, weightKg: e.target.value ? Number(e.target.value) : undefined })} /></label>
+            <label>SpO2<input type="number" value={patient.spo2 ?? ''} onChange={(e) => setPatient({ ...patient, spo2: e.target.value ? Number(e.target.value) : undefined })} /></label>
+          </div>
+          <label>Appearance<select value={patient.appearance} onChange={(e) => setPatient({ ...patient, appearance: e.target.value as PatientContext['appearance'] })}><option>well</option><option>ill</option><option>toxic</option><option>unstable</option></select></label>
+          <label>Notes<textarea value={patient.notes} onChange={(e) => setPatient({ ...patient, notes: e.target.value })} /></label>
+          <div className="mini"><Tag tone="blue">Age band: {snapshot.ageBand}</Tag>{patient.weightKg && <Tag>{patient.weightKg} kg</Tag>}</div>
+        </Panel>
+
+        <Panel title="Pathways" icon={<GitBranch />}>
+          {visiblePathways.map((item) => <button key={item.id} onClick={() => selectPathway(item.id)} className={`pathBtn ${item.id === pathway.id ? 'active' : ''}`}><b>{item.title}</b><span>{item.chiefComplaints.slice(0, 3).join(' · ')}</span></button>)}
+        </Panel>
+      </aside>
+
+      <section className="center">
+        <div className="pathHeader"><div><h2>{pathway.title}</h2><p>{pathway.warning}</p></div><div className="mini"><Tag tone={pathway.acuity === 'emergent' || pathway.acuity === 'critical' ? 'danger' : 'warn'}>{pathway.acuity}</Tag>{pathway.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</div></div>
+
+        <article className={`node ${currentNode.type === 'terminal' ? 'terminal' : ''}`}>
+          <p className="nodeType">{currentNode.type}</p>
+          <h2>{currentNode.title}</h2>
+          <p className="prompt">{currentNode.prompt}</p>
+          {currentNode.options?.length ? <div className="options">{currentNode.options.map((option) => <button key={option.label} onClick={() => choose(option)}>{option.label}</button>)}</div> : <div className="done"><CheckCircle2 /> Terminal node reached</div>}
+          <div className="controls"><button onClick={back} disabled={!history.length}><ArrowLeft /> Back</button><button onClick={reset}><RefreshCcw /> Reset</button></div>
+        </article>
+
+        <div className="twoCol"><Panel title="Actions now" icon={<ClipboardList />}><List items={currentNode.actions} /></Panel><Panel title="Reassessment" icon={<AlertTriangle />}><List items={currentNode.reassess} /></Panel></div>
+        <Panel title="Disposition criteria"><List items={currentNode.dispositionCriteria} /></Panel>
+        <Panel title="Search current pathway" icon={<Search />}><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="search nodes, actions, diagnoses" />{query && <div className="searchResults">{searchNodes.map((node) => <button key={node.id} onClick={() => setNodeId(node.id)}>{node.title}<span>{node.prompt}</span></button>)}</div>}</Panel>
+      </section>
+
+      <aside className="right">
+        <Panel title="Can’t miss" icon={<AlertTriangle />}><List items={snapshot.cantMiss} /></Panel>
+        <Panel title="Active tasks"><List items={snapshot.activeActions} /></Panel>
+        <Panel title="Flags">{snapshot.activeFlags.length ? snapshot.activeFlags.map((flag) => <Tag key={flag} tone="danger">{flag}</Tag>) : <p className="muted">No active flags.</p>}</Panel>
+        <Panel title="Attending triggers"><List items={snapshot.attendingTriggers} /></Panel>
+        <Panel title="Timeline">{history.length ? <ol className="timeline">{history.map((step, index) => <li key={index}><b>{step.nodeTitle}</b><span>{step.answer} · {step.at}</span></li>)}</ol> : <p className="muted">No decisions yet.</p>}</Panel>
+      </aside>
+    </main>
+
+    <footer>This tool supports clinician decision-making and does not replace clinical judgment, local policy, or attending supervision.</footer>
+  </div>;
 }
