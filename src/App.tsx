@@ -1,6 +1,5 @@
 import React, { useMemo, useState } from 'react';
 import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, GitBranch, RefreshCcw, Search, Stethoscope } from 'lucide-react';
-import { createPatientFlowState } from './engine/patientFlowHandoff';
 import { createSnapshot, getNode, makeDecisionStep, matchPathways } from './engine/pathwayEngine';
 import { getPathwayById, pathwayRegistry } from './pathways';
 import type { DecisionStep, PatientContext } from './types/flowmaster';
@@ -29,7 +28,6 @@ export default function App() {
 
   const currentNode = getNode(pathway, nodeId);
   const snapshot = createSnapshot(pathway, currentNode, patient, history);
-  const patientFlow = createPatientFlowState(pathway, currentNode, history);
   const matchedPathways = useMemo(() => matchPathways(pathwayRegistry, patient.complaint), [patient.complaint]);
   const visiblePathways = matchedPathways.length ? matchedPathways : pathwayRegistry;
   const searchNodes = Object.values(pathway.nodes).filter((node) =>
@@ -106,16 +104,6 @@ export default function App() {
           <div className="controls"><button onClick={back} disabled={!history.length}><ArrowLeft /> Back</button><button onClick={reset}><RefreshCcw /> Reset</button></div>
         </article>
 
-        <Panel title="Operational patient-flow handoff" icon={<ClipboardList />}>
-          <div className="handoffGrid">
-            <div><b>Recommended next action</b><p>{patientFlow.recommendedNextAction}</p></div>
-            <div><b>Can’t-miss diagnoses</b><List items={patientFlow.cantMissDiagnoses} /></div>
-            <div><b>Reassessment checkpoint</b><List items={patientFlow.reassessmentCheckpoints} /></div>
-            <div><b>Disposition readiness item</b><List items={patientFlow.dispositionReadinessItems} /></div>
-            <div><b>Warning / urgency flag</b><List items={patientFlow.warningUrgencyFlags} /></div>
-          </div>
-          <p className="muted handoffMeta">Source: {patientFlow.source} · Current node: {patientFlow.currentNodeTitle} · Updated {new Date(patientFlow.updatedAt).toLocaleTimeString()}</p>
-        </Panel>
         <div className="twoCol"><Panel title="Actions now" icon={<ClipboardList />}><List items={currentNode.actions} /></Panel><Panel title="Reassessment" icon={<AlertTriangle />}><List items={currentNode.reassess} /></Panel></div>
         <Panel title="Disposition criteria"><List items={currentNode.dispositionCriteria} /></Panel>
         <Panel title="Search current pathway" icon={<Search />}><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="search nodes, actions, diagnoses" />{query && <div className="searchResults">{searchNodes.map((node) => <button key={node.id} onClick={() => setNodeId(node.id)}>{node.title}<span>{node.prompt}</span></button>)}</div>}</Panel>

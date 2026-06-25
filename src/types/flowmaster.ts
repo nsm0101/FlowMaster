@@ -67,18 +67,3 @@ export type EngineSnapshot = {
   cantMiss: string[];
   attendingTriggers: string[];
 };
-
-export type PatientFlowState = {
-  source: 'pathway-decision' | 'epic-event' | 'manual-update';
-  pathwayId?: string;
-  pathwayTitle?: string;
-  currentNodeId?: string;
-  currentNodeTitle?: string;
-  lastDecisionLabel?: string;
-  recommendedNextAction: string;
-  cantMissDiagnoses: string[];
-  reassessmentCheckpoints: string[];
-  dispositionReadinessItems: string[];
-  warningUrgencyFlags: string[];
-  updatedAt: string;
-};
