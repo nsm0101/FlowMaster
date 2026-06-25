@@ -16,6 +16,6 @@
     "noEmit": true,
     "jsx": "react-jsx"
   },
-  "include": ["src"],
+  "include": ["src/App.tsx", "src/main.tsx", "src/engine", "src/pathways", "src/types/flowmaster.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }
