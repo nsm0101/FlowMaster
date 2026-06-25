@@ -21,6 +21,27 @@ npm run build
 
 Keep automated validation lightweight while the manual MVP workflow stabilizes. Current coverage focuses on pathway matching, age-band boundaries, attention-queue ranking, and timer/snooze behavior.
 
+## Production server
+
+`server.ts` serves the built app plus the SMART-on-FHIR demo endpoints. Build first, then start:
+
+```bash
+npm run build
+NODE_ENV=production npm start   # serves dist/ on http://localhost:3000
+```
+
+Running the production server without `npm run build` first means there is no `dist/`
+to serve and the page will not initialize — build, then start.
+
+## Troubleshooting: "the app will not initialize"
+
+The page shows a lightweight wave splash until React mounts. If it ever stays on the
+splash, the app now surfaces the underlying error (via an error boundary and a fatal
+fallback) instead of hanging. Common causes:
+
+- A stale install. Run `npm install` (versions are pinned for reproducible installs).
+- Running the production server before `npm run build` (see above).
+
 ## MVP smoke-test checklist
 
 Use this checklist for quick manual confidence checks after pathway, queue, or timer changes:

@@ -8,8 +8,11 @@
     <meta name="apple-mobile-web-app-title" content="PEM Flow" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="theme-color" content="#0072CE" />
-    <link rel="icon" type="image/png" href="/images/FlowMaster_v1.png" />
-    <link rel="apple-touch-icon" href="/images/FlowMaster_v1.png" />
+    <meta name="description" content="PEM FlowMaster — a pediatric emergency department pathway navigator and patient-flow board for shift huddles, reassessments, and disposition tracking." />
+    <link rel="icon" type="image/svg+xml" href="/images/flowmaster-wave.svg" />
+    <link rel="alternate icon" type="image/png" href="/images/flowmaster-wave-192.png" />
+    <link rel="apple-touch-icon" href="/images/flowmaster-wave-180.png" />
+    <link rel="manifest" href="/manifest.webmanifest" />
     <title>PEM FlowMaster</title>
   </head>
   <body>
@@ -19,11 +22,17 @@
       }
     </script>
     <div id="root">
-      <div id="splash" style="position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f9fafb; z-index: 9999; transition: opacity 0.5s ease-out;">
-        <img src="/images/FlowMaster_v1.png" style="width: 80px; height: 80px; margin-bottom: 20px; animation: pulse 2s infinite ease-in-out;" alt="Logo" />
+      <div id="splash" role="status" aria-live="polite" aria-label="Loading PEM FlowMaster" style="position: fixed; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #f9fafb; z-index: 9999; transition: opacity 0.5s ease-out;">
+        <svg width="80" height="80" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" style="margin-bottom: 20px; animation: pulse 2s infinite ease-in-out;" aria-hidden="true">
+          <defs><linearGradient id="splashWave" x1="8" y1="6" x2="54" y2="58" gradientUnits="userSpaceOnUse"><stop stop-color="#39B7F0"/><stop offset="1" stop-color="#0061B0"/></linearGradient></defs>
+          <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#splashWave)"/>
+          <path d="M10 43 C 9 28, 21 18, 35 20 C 47 22, 51 33, 45 40 C 41 44, 33 44, 32 38 C 31.4 34, 35.5 32.5, 38 35 C 35 31, 28.5 32.5, 28.5 39 C 28.5 46, 37 49, 45 45" stroke="#fff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+          <circle cx="20" cy="46" r="2.2" fill="#fff"/><circle cx="27" cy="49" r="1.6" fill="#fff" fill-opacity="0.85"/>
+        </svg>
         <div style="font-family: system-ui, -apple-system, sans-serif; font-weight: 900; color: #003C71; font-size: 20px; letter-spacing: -0.025em;">
           PEM <span style="color: #0072CE;">FlowMaster</span>
         </div>
+        <noscript><p style="font-family: system-ui, sans-serif; color: #5f7077; margin-top: 16px;">JavaScript is required to run PEM FlowMaster.</p></noscript>
         <style>
           @keyframes pulse {
             0%, 100% { transform: scale(1); opacity: 1; }
@@ -31,6 +40,10 @@
           }
           .dark #splash { background: #030712 !important; }
           .dark #splash div { color: #ffffff !important; }
+          @media (prefers-reduced-motion: reduce) {
+            #splash svg { animation: none !important; }
+            #splash { transition: none !important; }
+          }
         </style>
       </div>
     </div>

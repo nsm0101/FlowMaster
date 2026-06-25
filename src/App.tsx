@@ -3,6 +3,7 @@ import { AlertTriangle, ArrowLeft, BellRing, CheckCircle2, ClipboardCheck, Clipb
 import { createPatientFlowState } from './engine/patientFlowHandoff';
 import { createSnapshot, getNode, makeDecisionStep, matchPathways } from './engine/pathwayEngine';
 import { DemoRoster } from './components/DemoRoster';
+import { WaveMark } from './components/Logo';
 import { getPathwayById, pathwayRegistry } from './pathways';
 import type { DecisionStep, NormalizedPatientFlowState, PatientContext } from './types/flowmaster';
 
@@ -154,9 +155,14 @@ export default function App() {
 
   return <div className="app">
     <header className="hero">
-      <div>
-        <p className="eyebrow">PEM FlowMaster MVP</p>
-        <h1>PEM FlowMaster</h1>
+      <div className="heroLead">
+        <div className="brand">
+          <span className="brandMark"><WaveMark size={56} /></span>
+          <div>
+            <p className="eyebrow">PEM FlowMaster MVP</p>
+            <h1>PEM FlowMaster</h1>
+          </div>
+        </div>
         <p>Pediatric ED pathway navigator plus a manual demo roster: room-sorted list, actionability-first attention queue, roadmap view, and running-the-list mode for shift huddles.</p>
       </div>
       <div className="heroCard"><Stethoscope /><b>Clinical safety layer</b><span>ABCDE → branch → workup → reassess → disposition</span></div>
