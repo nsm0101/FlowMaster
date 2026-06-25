@@ -1,0 +1,178 @@
+.demoSections {
+  margin: 16px 0;
+}
+
+.attentionQueue {
+  display: grid;
+  gap: 12px;
+}
+
+.queueGroup {
+  border: 1px solid #dce9ec;
+  border-radius: 16px;
+  padding: 12px;
+  background: #fbffff;
+}
+
+.queueGroup h4 {
+  margin: 0 0 8px;
+  color: #123934;
+}
+
+.queueGroup button {
+  width: 100%;
+  border: 1px solid #d7e6e9;
+  background: white;
+  border-radius: 12px;
+  padding: 10px 12px;
+  text-align: left;
+  color: #123934;
+  margin-top: 8px;
+  cursor: pointer;
+}
+
+.queueGroup button:hover {
+  background: #e8f8f5;
+  border-color: #24a687;
+}
+
+.queueGroup span {
+  display: block;
+  color: #61737a;
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.roadmap {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+}
+
+.roadmapStep {
+  border: 1px solid #d9e7ea;
+  border-radius: 14px;
+  padding: 12px;
+  background: linear-gradient(180deg, #fbffff, #eef8f7);
+}
+
+.roadmapStep span {
+  display: block;
+  color: #52636a;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.roadmapStep b {
+  font-size: 28px;
+  color: #123934;
+}
+
+.rosterList {
+  display: grid;
+  gap: 14px;
+}
+
+.patientCard {
+  border: 1px solid #d9e7ea;
+  border-radius: 18px;
+  padding: 14px;
+  background: #fbffff;
+}
+
+.patientCardTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.patientCard .room {
+  margin: 0 0 3px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  color: #24a687;
+  font-weight: 900;
+  font-size: 12px;
+}
+
+.patientCard h3 {
+  margin: 0;
+  color: #12263a;
+}
+
+.patientCard dl {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 10px;
+  margin: 14px 0;
+}
+
+.patientCard dt {
+  color: #6a7a80;
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 900;
+}
+
+.patientCard dd {
+  margin: 3px 0 0;
+  color: #1d3038;
+  font-weight: 750;
+}
+
+.patientCard .wide {
+  grid-column: span 2;
+}
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 10px;
+}
+
+.cardActions button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid #cfe2e5;
+  background: #eef8f7;
+  border-radius: 12px;
+  padding: 9px 11px;
+  color: #123934;
+  font-weight: 800;
+  cursor: pointer;
+}
+
+.cardActions button svg {
+  width: 16px;
+}
+
+.editGrid {
+  display: grid;
+  grid-template-columns: 1.2fr .8fr 1.2fr;
+  gap: 10px;
+}
+
+.editGrid label {
+  font-size: 12px;
+  margin-bottom: 0;
+}
+
+.editGrid input {
+  padding: 8px;
+}
+
+@media (max-width: 760px) {
+  .roadmap,
+  .patientCard dl,
+  .editGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .patientCard .wide {
+    grid-column: auto;
+  }
+}

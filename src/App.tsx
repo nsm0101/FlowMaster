@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { AlertTriangle, ArrowLeft, BellRing, CheckCircle2, ClipboardCheck, ClipboardList, Clock3, GitBranch, ListChecks, Map, PlayCircle, RefreshCcw, Search, Stethoscope, UserRoundCheck } from 'lucide-react';
 import { createPatientFlowState } from './engine/patientFlowHandoff';
 import { createSnapshot, getNode, makeDecisionStep, matchPathways } from './engine/pathwayEngine';
+import { DemoRoster } from './components/DemoRoster';
 import { getPathwayById, pathwayRegistry } from './pathways';
 import type { DecisionStep, NormalizedPatientFlowState, PatientContext } from './types/flowmaster';
 
