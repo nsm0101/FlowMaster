@@ -63,3 +63,116 @@ export const matchPathways = (pathways: Pathway[], complaint: string) => {
     pathway.title.toLowerCase().includes(text)
   );
 };
+
+export type TimerLevel = 'normal' | 'due' | 'overdue' | 'snoozed';
+
+export type TimerStateInput = {
+  lastAssessmentAtMs: number;
+  nowMs?: number;
+  dueAfterMinutes?: number;
+  overdueAfterMinutes?: number;
+  snoozedUntilMs?: number;
+};
+
+export type TimerState = {
+  elapsedMinutes: number;
+  level: TimerLevel;
+  isDue: boolean;
+  isOverdue: boolean;
+  isSnoozed: boolean;
+  remainingSnoozeMinutes: number;
+};
+
+export const getTimerState = ({
+  lastAssessmentAtMs,
+  nowMs = Date.now(),
+  dueAfterMinutes = 90,
+  overdueAfterMinutes = 180,
+  snoozedUntilMs
+}: TimerStateInput): TimerState => {
+  const elapsedMinutes = Math.max(0, Math.floor((nowMs - lastAssessmentAtMs) / 60000));
+  const remainingSnoozeMinutes = snoozedUntilMs && snoozedUntilMs > nowMs ? Math.ceil((snoozedUntilMs - nowMs) / 60000) : 0;
+  const isSnoozed = remainingSnoozeMinutes > 0;
+  const isOverdue = elapsedMinutes >= overdueAfterMinutes;
+  const isDue = elapsedMinutes >= dueAfterMinutes;
+
+  return {
+    elapsedMinutes,
+    level: isSnoozed ? 'snoozed' : isOverdue ? 'overdue' : isDue ? 'due' : 'normal',
+    isDue,
+    isOverdue,
+    isSnoozed,
+    remainingSnoozeMinutes
+  };
+};
+
+export type AttentionQueuePatient = {
+  id: string;
+  status: string;
+  lastAssessmentAtMs: number;
+  createdAtMs: number;
+  isPinned?: boolean;
+  isCompleted?: boolean;
+  workflowFlags?: Partial<Record<'readyForAttending' | 'awaitingDispo' | 'boarding' | 'familyUpdated' | 'readyForDischargePaperwork', boolean>>;
+  snoozedUntilMs?: number;
+};
+
+export type RankedAttentionPatient<T extends AttentionQueuePatient = AttentionQueuePatient> = {
+  patient: T;
+  score: number;
+  reasons: string[];
+  timer: TimerState;
+};
+
+export const rankAttentionQueue = <T extends AttentionQueuePatient>(patients: T[], nowMs = Date.now()): RankedAttentionPatient<T>[] => {
+  return patients
+    .map((patient) => {
+      const timer = getTimerState({ lastAssessmentAtMs: patient.lastAssessmentAtMs, nowMs, snoozedUntilMs: patient.snoozedUntilMs });
+      const reasons: string[] = [];
+      let score = 0;
+
+      if (patient.isCompleted) {
+        score -= 1000;
+        reasons.push('completed');
+      }
+      if (patient.isPinned) {
+        score += 100;
+        reasons.push('pinned');
+      }
+      if (patient.status === 'New') {
+        score += 80;
+        reasons.push('new patient');
+      }
+      if (patient.workflowFlags?.readyForAttending) {
+        score += 70;
+        reasons.push('ready for attending');
+      }
+      if (patient.workflowFlags?.awaitingDispo) {
+        score += 45;
+        reasons.push('awaiting disposition');
+      }
+      if (patient.workflowFlags?.boarding) {
+        score += 30;
+        reasons.push('boarding');
+      }
+      if (timer.isOverdue) {
+        score += 60;
+        reasons.push('assessment timer overdue');
+      } else if (timer.isDue) {
+        score += 35;
+        reasons.push('assessment timer due');
+      }
+      if (timer.isSnoozed) {
+        score -= 50;
+        reasons.push('snoozed');
+      }
+
+      return { patient, score, reasons, timer };
+    })
+    .sort((a, b) => {
+      if (a.patient.isCompleted !== b.patient.isCompleted) return a.patient.isCompleted ? 1 : -1;
+      if (b.score !== a.score) return b.score - a.score;
+      if (a.patient.lastAssessmentAtMs !== b.patient.lastAssessmentAtMs) return a.patient.lastAssessmentAtMs - b.patient.lastAssessmentAtMs;
+      return b.patient.createdAtMs - a.patient.createdAtMs;
+    });
+};
