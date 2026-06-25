@@ -1,6 +1,7 @@
 import { BellRing, ClipboardCheck, Clock3, ListChecks, Map, PlayCircle, UserRoundCheck } from 'lucide-react';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
+import './DemoRoster.css';
 
 type Actionability = 'Ready now' | 'Needs review' | 'Blocked' | 'Snoozed';
 
