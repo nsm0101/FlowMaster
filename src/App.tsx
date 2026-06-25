@@ -2,9 +2,45 @@ import React, { useMemo, useState } from 'react';
 import { AlertTriangle, ArrowLeft, CheckCircle2, ClipboardList, GitBranch, RefreshCcw, Search, Stethoscope } from 'lucide-react';
 import { createSnapshot, getNode, makeDecisionStep, matchPathways } from './engine/pathwayEngine';
 import { getPathwayById, pathwayRegistry } from './pathways';
-import type { DecisionStep, PatientContext } from './types/flowmaster';
+import type { DecisionStep, NormalizedPatientFlowState, PatientContext } from './types/flowmaster';
 
 const emptyPatient: PatientContext = { complaint: '', age: 5, unit: 'years', appearance: 'well', notes: '' };
+
+const createDemoFlowState = (patient: PatientContext, pathwayTitle: string, acuity: NormalizedPatientFlowState['acuity']): NormalizedPatientFlowState => ({
+  identity: {
+    patientId: 'demo-patient',
+    encounterId: 'demo-encounter',
+    initials: 'DEMO',
+  },
+  encounter: {
+    encounterId: 'demo-encounter',
+    trackingStatus: 'Manual MVP',
+    locationSource: 'manual',
+  },
+  room: 'TBD',
+  chiefComplaint: patient.complaint || pathwayTitle,
+  age: {
+    value: patient.age,
+    unit: patient.unit,
+  },
+  acuity,
+  status: patient.appearance === 'unstable' || patient.appearance === 'toxic' ? 'needs-provider' : 'active',
+  phase: 'initial-assessment',
+  nextAction: {
+    label: 'Use pathway to identify the next care-advancing action',
+    ownerRole: 'attending',
+    source: 'pathway',
+    confidence: 'needs-review',
+  },
+  owner: {
+    role: 'attending',
+    source: 'manual',
+  },
+  dispositionTarget: 'undecided',
+  review: {},
+  sourceLabels: ['manual', 'pathway'],
+  updatedAt: new Date().toISOString(),
+});
 
 function Tag({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) {
   return <span className={`tag ${tone}`}>{children}</span>;
@@ -28,6 +64,7 @@ export default function App() {
 
   const currentNode = getNode(pathway, nodeId);
   const snapshot = createSnapshot(pathway, currentNode, patient, history);
+  const flowState = useMemo(() => createDemoFlowState(patient, pathway.title, pathway.acuity), [patient, pathway.title, pathway.acuity]);
   const matchedPathways = useMemo(() => matchPathways(pathwayRegistry, patient.complaint), [patient.complaint]);
   const visiblePathways = matchedPathways.length ? matchedPathways : pathwayRegistry;
   const searchNodes = Object.values(pathway.nodes).filter((node) =>
@@ -111,6 +148,16 @@ export default function App() {
 
       <aside className="right">
         <Panel title="Can’t miss" icon={<AlertTriangle />}><List items={snapshot.cantMiss} /></Panel>
+        <Panel title="Flow state model">
+          <div className="flowFacts">
+            <span><b>Phase</b>{flowState.phase}</span>
+            <span><b>Status</b>{flowState.status}</span>
+            <span><b>Owner</b>{flowState.owner?.role ?? 'unknown'}</span>
+            <span><b>Dispo</b>{flowState.dispositionTarget}</span>
+          </div>
+          <p className="muted">{flowState.nextAction?.label}</p>
+          <div className="mini">{flowState.sourceLabels.map((source) => <Tag key={source}>{source}</Tag>)}</div>
+        </Panel>
         <Panel title="Active tasks"><List items={snapshot.activeActions} /></Panel>
         <Panel title="Flags">{snapshot.activeFlags.length ? snapshot.activeFlags.map((flag) => <Tag key={flag} tone="danger">{flag}</Tag>) : <p className="muted">No active flags.</p>}</Panel>
         <Panel title="Attending triggers"><List items={snapshot.attendingTriggers} /></Panel>
