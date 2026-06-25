@@ -170,6 +170,13 @@ Keep cards concise:
 - Use initials/room/age by default unless authenticated and inside secure context.
 - Auto-lock or blur content after inactivity.
 
+#### FHIR/SMART mobile safety guardrails
+
+- Notifications and lock-screen surfaces must be no-PHI by default: use generic text such as “A patient needs review” rather than names, MRNs, DOBs, diagnoses, or free-text notes.
+- Outside an authenticated and active session, display only the smallest useful identifiers: room, initials or first-name/last-initial where approved, age, and operational state.
+- Any mobile action that writes to Epic must show the exact destination, action, actor, and timestamp before submission and require an explicit confirmation tap.
+- Mobile sessions should blur or lock after inactivity and must not cache raw FHIR payloads or bearer tokens beyond the active demo session.
+
 ## Epic / EMR integration strategy
 
 ### Integration phases
@@ -180,6 +187,14 @@ Keep cards concise:
 - Manual next actions.
 - Manual comment entry.
 - Useful for product iteration, but not production-grade adoption.
+
+### Demo vs. production modes
+
+- Demo mode is limited to Epic sandbox exploration and product demos. It may pass short-lived sandbox tokens to the browser only for the active session, must not be connected to real patient data, and keeps write-back disabled by default.
+- Production mode requires institution-approved Epic endpoints, HTTPS redirect URLs, enterprise identity, server-side encrypted token/session storage, strict origin handling, centralized audit logging, and documented approval before any ePHI is processed.
+- Required production environment variables include `FHIR_INTEGRATION_MODE=production`, `APP_URL`, `EPIC_CLIENT_ID`, `EPIC_FHIR_BASE_URL`, `EPIC_AUTH_ENDPOINT`, `EPIC_TOKEN_ENDPOINT`, `SMART_ALLOWED_SCOPES`, and secret-managed `EPIC_CLIENT_SECRET` when using a confidential client.
+- Default scopes should remain read-only and minimum necessary: `openid`, `fhirUser`, `launch`, `patient/Patient.read`, and `patient/Encounter.read`. Add `patient/Communication.write` only after governance approval and only when write-back is enabled.
+- Token handling expectation: production bearer and refresh tokens stay server-side, encrypted, tied to the authenticated user/session, never written to client logs, analytics, local storage, or patient records, and rotated/expired per institutional policy.
 
 #### Phase 1: SMART on FHIR embedded launch
 
@@ -256,6 +271,15 @@ Only after trust and governance:
 - write discrete flow comments if approved.
 
 Write-back should always be auditable, attributable, reversible where possible, and visibly distinguished from automatically inferred state.
+
+Before any write-back operation:
+
+- keep `FHIR_WRITE_BACK_ENABLED=false` until the site, workflow, destination resource, and scope are approved;
+- verify the SMART token includes the specific write scope required for the target operation;
+- require explicit user confirmation and an attributable actor identity;
+- write only structured, minimum-necessary content with no patient name, MRN, DOB, or free-text PHI by default;
+- audit attempted, blocked, succeeded, and failed write-backs with timestamp, actor, patient/encounter reference, action, destination, and outcome;
+- provide a rollback/correction workflow or operational policy when the downstream system cannot reverse the write.
 
 ## Epic data availability considerations
 
@@ -387,8 +411,12 @@ Audit:
 - next action changed,
 - snooze set/cleared,
 - write-back attempted/succeeded/failed,
+- blocked write-back attempts and missing-scope failures,
+- token exchange success/failure without logging bearer tokens,
 - export/download attempts,
 - administrative configuration changes.
+
+Audit events should be centralized server-side in production, immutable or tamper-evident, searchable by patient/encounter/user/time, and free of raw FHIR payloads, bearer tokens, full notes, or other unnecessary PHI.
 
 ### Data storage minimization
 
