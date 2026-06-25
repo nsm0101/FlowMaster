@@ -137,6 +137,21 @@ export type NormalizedPatientFlowState = {
   updatedAt: string;
 };
 
+
+export type PatientFlowState = {
+  source: 'pathway';
+  pathwayId: string;
+  pathwayTitle: string;
+  currentNodeId: string;
+  currentNodeTitle: string;
+  recommendedNextAction: string;
+  cantMissDiagnoses: string[];
+  reassessmentCheckpoints: string[];
+  dispositionReadinessItems: string[];
+  warningUrgencyFlags: string[];
+  updatedAt: string;
+};
+
 export type PatientContext = {
   complaint: string;
   age: number;
