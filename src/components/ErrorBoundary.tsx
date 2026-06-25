@@ -1,8 +1,3 @@
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- */
-
 import React, { Component, ErrorInfo, ReactNode } from 'react';
 import { AlertCircle, RefreshCw } from 'lucide-react';
 
@@ -15,10 +10,15 @@ interface State {
   error: Error | null;
 }
 
+/**
+ * Catches render-time errors anywhere in the tree and shows a branded, actionable
+ * fallback instead of a blank screen (or an endless loading splash). Styled with
+ * inline styles so it never depends on app CSS having loaded.
+ */
 export class ErrorBoundary extends Component<Props, State> {
   public state: State = {
     hasError: false,
-    error: null
+    error: null,
   };
 
   public static getDerivedStateFromError(error: Error): State {
@@ -26,54 +26,81 @@ export class ErrorBoundary extends Component<Props, State> {
   }
 
   public componentDidCatch(error: Error, errorInfo: ErrorInfo) {
-    console.error('Uncaught error:', error, errorInfo);
+    console.error('PEM FlowMaster caught an error:', error, errorInfo);
   }
 
   public render() {
-    if (this.state.hasError) {
-      let errorMessage = "An unexpected error occurred.";
-      let isFirebaseError = false;
-
-      try {
-        if (this.state.error?.message) {
-          const parsed = JSON.parse(this.state.error.message);
-          if (parsed.error && parsed.authInfo) {
-            errorMessage = `Firebase Error: ${parsed.error} during ${parsed.operationType} at ${parsed.path || 'unknown path'}`;
-            isFirebaseError = true;
-          }
-        }
-      } catch (e) {
-        errorMessage = this.state.error?.message || errorMessage;
-      }
-
-      return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white rounded-2xl shadow-xl border border-gray-100 p-8 text-center space-y-6">
-            <div className="w-16 h-16 bg-red-50 rounded-full flex items-center justify-center mx-auto text-red-600">
-              <AlertCircle size={32} />
-            </div>
-            <div className="space-y-2">
-              <h2 className="text-xl font-black text-gray-900 tracking-tight">Something went wrong</h2>
-              <p className="text-sm text-gray-500 font-medium leading-relaxed">
-                {errorMessage}
-              </p>
-              {isFirebaseError && (
-                <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mt-4">
-                  This might be a configuration or permission issue.
-                </p>
-              )}
-            </div>
-            <button
-              onClick={() => window.location.reload()}
-              className="w-full py-3 bg-blue-600 text-white rounded-xl font-bold flex items-center justify-center gap-2 hover:bg-blue-700 transition-all shadow-md"
-            >
-              <RefreshCw size={18} /> Reload Application
-            </button>
-          </div>
-        </div>
-      );
+    if (!this.state.hasError) {
+      return this.props.children;
     }
 
-    return this.props.children;
+    const message = this.state.error?.message || 'An unexpected error occurred.';
+
+    return (
+      <div style={styles.screen}>
+        <div style={styles.card}>
+          <div style={styles.iconCircle}>
+            <AlertCircle size={30} />
+          </div>
+          <h2 style={styles.title}>Something went wrong</h2>
+          <p style={styles.message}>{message}</p>
+          <button
+            type="button"
+            onClick={() => window.location.reload()}
+            style={styles.button}
+          >
+            <RefreshCw size={18} /> Reload application
+          </button>
+        </div>
+      </div>
+    );
   }
 }
+
+const styles: Record<string, React.CSSProperties> = {
+  screen: {
+    minHeight: '100vh',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    background: '#eef5f7',
+    fontFamily: "Inter, system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+    color: '#12263a',
+  },
+  card: {
+    maxWidth: 420,
+    width: '100%',
+    background: '#ffffff',
+    border: '1px solid #d9e7ea',
+    borderRadius: 18,
+    boxShadow: '0 10px 26px rgba(18,57,52,.12)',
+    padding: 28,
+    textAlign: 'center',
+  },
+  iconCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: '50%',
+    background: '#ffe5e5',
+    color: '#9f1d1d',
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    margin: '0 auto 16px',
+  },
+  title: { margin: '0 0 8px', fontWeight: 900, letterSpacing: '-0.02em' },
+  message: { margin: '0 0 20px', color: '#5f7077', lineHeight: 1.45 },
+  button: {
+    border: 0,
+    background: '#0072CE',
+    color: '#ffffff',
+    fontWeight: 800,
+    borderRadius: 12,
+    padding: '12px 18px',
+    cursor: 'pointer',
+    display: 'inline-flex',
+    alignItems: 'center',
+    gap: 8,
+  },
+};

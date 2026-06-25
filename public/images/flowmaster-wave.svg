@@ -1,0 +1,13 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="PEM FlowMaster wave logo">
+  <defs>
+    <linearGradient id="fmWaveBg" x1="8" y1="6" x2="54" y2="58" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#39B7F0"/>
+      <stop offset="1" stop-color="#0061B0"/>
+    </linearGradient>
+  </defs>
+  <rect x="2" y="2" width="60" height="60" rx="16" fill="url(#fmWaveBg)"/>
+  <path d="M10 43 C 9 28, 21 18, 35 20 C 47 22, 51 33, 45 40 C 41 44, 33 44, 32 38 C 31.4 34, 35.5 32.5, 38 35 C 35 31, 28.5 32.5, 28.5 39 C 28.5 46, 37 49, 45 45"
+        stroke="#ffffff" stroke-width="5.5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <circle cx="20" cy="46" r="2.2" fill="#ffffff"/>
+  <circle cx="27" cy="49" r="1.6" fill="#ffffff" fill-opacity="0.85"/>
+</svg>
