@@ -65,9 +65,111 @@ const initialPatientContext: PatientContext = {
   notes: ''
 };
 
+// Normal vitals boundaries based on age group
+const getNormalVitalsRange = (age: number, unit: AgeUnit) => {
+  let years = age;
+  if (unit === 'months') years = age / 12;
+  if (unit === 'days') years = age / 365;
+
+  if (years <= 0.08) { // < 1 month
+    return { hr: [100, 180], rr: [30, 60], temp: [36.5, 37.9] };
+  } else if (years <= 1) { // 1 month - 1 year
+    return { hr: [100, 160], rr: [30, 50], temp: [36.5, 37.9] };
+  } else if (years <= 3) { // 1-3 years
+    return { hr: [90, 150], rr: [24, 40], temp: [36.5, 37.5] };
+  } else if (years <= 5) { // 3-5 years
+    return { hr: [80, 140], rr: [22, 34], temp: [36.5, 37.5] };
+  } else if (years <= 12) { // 6-12 years
+    return { hr: [70, 120], rr: [18, 30], temp: [36.5, 37.5] };
+  } else { // > 12 years
+    return { hr: [60, 100], rr: [12, 20], temp: [36.5, 37.5] };
+  }
+};
+
+const getVitalStatus = (name: 'temp' | 'hr' | 'rr' | 'spo2', val: number, age: number, unit: AgeUnit) => {
+  const normals = getNormalVitalsRange(age, unit);
+  if (name === 'temp') {
+    if (val >= 38.0) return { level: 'high', label: 'Fever (≥38°C)' };
+    if (val < 36.0) return { level: 'low', label: 'Hypothermia (<36°C)' };
+    return { level: 'normal', label: 'Normal' };
+  }
+  if (name === 'spo2') {
+    if (val < 92) return { level: 'critical', label: 'Severe Hypoxia (<92%)' };
+    if (val < 94) return { level: 'low', label: 'Hypoxia (<94%)' };
+    return { level: 'normal', label: 'Normal' };
+  }
+  if (name === 'hr') {
+    if (val > normals.hr[1]) return { level: 'high', label: `Tachycardia (>${normals.hr[1]})` };
+    if (val < normals.hr[0]) return { level: 'low', label: `Bradycardia (<${normals.hr[0]})` };
+    return { level: 'normal', label: 'Normal' };
+  }
+  if (name === 'rr') {
+    if (val > normals.rr[1]) return { level: 'high', label: `Tachypnea (>${normals.rr[1]})` };
+    if (val < normals.rr[0]) return { level: 'low', label: `Bradypnea (<${normals.rr[0]})` };
+    return { level: 'normal', label: 'Normal' };
+  }
+  return { level: 'normal', label: 'Normal' };
+};
+
+// Pathway match scoring based on chief complaint and patient parameters
+const scorePathway = (pathway: Pathway, patient: PatientContext, query: string) => {
+  let score = 0;
+  const q = query.trim().toLowerCase();
+  const complaint = patient.complaint.trim().toLowerCase();
+  
+  // Keyword matches on search query
+  if (q) {
+    if (pathway.title.toLowerCase().includes(q)) score += 25;
+    if (pathway.chiefComplaints.some(c => c.toLowerCase().includes(q) || q.includes(c.toLowerCase()))) score += 20;
+    if (pathway.tags.some(t => t.toLowerCase().includes(q) || q.includes(t.toLowerCase()))) score += 15;
+  }
+  
+  // Keyword matches on chief complaint
+  if (complaint) {
+    if (pathway.title.toLowerCase().includes(complaint)) score += 20;
+    if (pathway.chiefComplaints.some(c => c.toLowerCase().includes(complaint) || complaint.includes(c.toLowerCase()))) score += 15;
+    if (pathway.tags.some(t => t.toLowerCase().includes(complaint) || complaint.includes(t.toLowerCase()))) score += 10;
+  }
+
+  // Vital sign indicators & clinical appearance matches
+  if (pathway.id === 'fever') {
+    if (patient.temperatureC !== undefined && patient.temperatureC >= 38.0) score += 30;
+    if (complaint.includes('fever') || complaint.includes('warm') || complaint.includes('hot') || complaint.includes('temp')) score += 20;
+  }
+  
+  if (pathway.id === 'resp') {
+    if (patient.spo2 !== undefined && patient.spo2 < 94) score += 30;
+    const normals = getNormalVitalsRange(patient.age, patient.unit);
+    if (patient.respiratoryRate !== undefined && patient.respiratoryRate > normals.rr[1]) score += 20;
+    if (complaint.includes('cough') || complaint.includes('wheez') || complaint.includes('breath') || complaint.includes('asthma') || complaint.includes('stridor') || complaint.includes('resp')) score += 20;
+  }
+  
+  if (pathway.id === 'abd') {
+    if (complaint.includes('pain') || complaint.includes('belly') || complaint.includes('vomit') || complaint.includes('diarrh') || complaint.includes('nausea') || complaint.includes('stomach')) score += 20;
+  }
+  
+  if (pathway.id === 'seizure') {
+    if (complaint.includes('seiz') || complaint.includes('convuls') || complaint.includes('fit') || complaint.includes('shak')) score += 25;
+    if (patient.appearance === 'unstable' || patient.appearance === 'toxic') score += 10;
+  }
+  
+  if (pathway.id === 'head') {
+    if (complaint.includes('head') || complaint.includes('fall') || complaint.includes('trauma') || complaint.includes('hit') || complaint.includes('concuss')) score += 25;
+  }
+  
+  if (pathway.id === 'limp') {
+    if (complaint.includes('limp') || complaint.includes('walk') || complaint.includes('pain') || complaint.includes('leg') || complaint.includes('joint') || complaint.includes('hip')) score += 25;
+  }
+
+  return score;
+};
+
 export default function App() {
   const { width } = useWindowDimensions();
   const isDesktop = width >= 1024;
+
+  // activeStep: 'profile' | 'navigate' | 'recommendations'
+  const [activeStep, setActiveStep] = useState<'profile' | 'navigate' | 'recommendations'>('profile');
 
   // App Mode: 'guided' (step-by-step) vs 'reference' (full algorithm)
   const [appMode, setAppMode] = useState<'guided' | 'reference'>('guided');
@@ -82,8 +184,18 @@ export default function App() {
   const [pathwayId, setPathwayId] = useState<string>(pathwayRegistry[0].id);
   const pathway = useMemo(() => getPathwayById(pathwayId), [pathwayId]);
 
-  // Pathway Search
+  // Pathway Search & suggestion scoring
   const [searchQuery, setSearchQuery] = useState('');
+  
+  const suggestedPathwaysList = useMemo(() => {
+    return pathwayRegistry
+      .map((item) => {
+        const score = scorePathway(item, patient, searchQuery);
+        return { ...item, score };
+      })
+      .sort((a, b) => b.score - a.score);
+  }, [patient, searchQuery]);
+
   const matchedPathwaysList = useMemo(() => {
     return matchPathways(pathwayRegistry, searchQuery);
   }, [searchQuery]);
@@ -140,257 +252,526 @@ export default function App() {
     setCompletedActions((prev) => ({
       ...prev,
       [actionText]: !prev[actionText]
-    }));
+}));
   };
 
   // Calculate age description badge
   const ageDescription = `${patient.age} ${patient.unit}`;
   const resolvedAgeBand = snapshot.ageBand;
 
-  // Render Left Column: Search & Context Inputs
-  const renderLeftPanel = () => (
-    <View style={styles.card}>
-      <View style={styles.cardHeader}>
-        <Stethoscope color="#14B8A6" size={18} />
-        <Text style={styles.cardTitle}>Clinical Context</Text>
-      </View>
+  // 1. Unified Stepper UI
+  const renderStepper = () => {
+    const steps = [
+      { key: 'profile', label: '1. Patient Profile', icon: User },
+      { key: 'navigate', label: '2. Guided Navigator', icon: Compass },
+      { key: 'recommendations', label: '3. Care Plan & Handoff', icon: FileText }
+    ] as const;
 
-      <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
-        {/* Pathway Search & Select */}
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Search Symptoms/Pathways</Text>
-          <View style={styles.searchContainer}>
-            <Search color="#94A3B8" size={16} style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchField}
-              placeholder="e.g. fever, limp, seizure..."
-              placeholderTextColor="#64748B"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-            />
-          </View>
-        </View>
+    return (
+      <View style={styles.stepperContainer}>
+        {steps.map((step, idx) => {
+          const isActive = activeStep === step.key;
+          const isDone = 
+            (step.key === 'profile' && pathwayId) ||
+            (step.key === 'navigate' && activeStep === 'recommendations');
+          const IconComponent = step.icon;
 
-        <View style={styles.pathwayList}>
-          {matchedPathwaysList.slice(0, 4).map((item) => (
-            <TouchableOpacity
-              key={item.id}
-              activeOpacity={0.7}
-              style={[
-                styles.pathwayItem,
-                item.id === pathway.id && styles.pathwayItemActive
-              ]}
-              onPress={() => selectPathway(item.id)}
-            >
-              <View style={styles.pathwayHeaderRow}>
-                <Text style={[
-                  styles.pathwayItemTitle,
-                  item.id === pathway.id && styles.pathwayItemTitleActive
-                ]}>{item.title}</Text>
-                <ChevronRight color={item.id === pathway.id ? '#14B8A6' : '#475569'} size={14} />
-              </View>
-              <Text style={styles.pathwayItemDesc}>{item.chiefComplaints.join(' · ')}</Text>
-            </TouchableOpacity>
-          ))}
-          {matchedPathwaysList.length === 0 && (
-            <Text style={styles.emptyText}>No matching pathways found.</Text>
-          )}
-        </View>
-
-        {/* Patient Parameters */}
-        <View style={styles.divider} />
-        
-        <Text style={styles.subSectionTitle}>Patient Profile</Text>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Age Value</Text>
-          <TextInput
-            style={styles.textInput}
-            keyboardType="numeric"
-            value={patient.age.toString()}
-            onChangeText={(val) => setPatient(prev => ({ ...prev, age: Number(val) || 0 }))}
-          />
-        </View>
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Age Unit</Text>
-          <View style={styles.pickerRow}>
-            {(['days', 'months', 'years'] as const).map((unit) => (
+          return (
+            <React.Fragment key={step.key}>
+              {idx > 0 && <View style={styles.stepperLine} />}
               <TouchableOpacity
-                key={unit}
                 activeOpacity={0.7}
                 style={[
-                  styles.pickerBtn,
-                  patient.unit === unit && styles.pickerBtnActive
+                  styles.stepperStep,
+                  isActive && styles.stepperStepActive,
+                  isDone && styles.stepperStepDone
                 ]}
-                onPress={() => setPatient(prev => ({ ...prev, unit }))}
+                disabled={step.key !== 'profile' && !pathwayId}
+                onPress={() => setActiveStep(step.key)}
               >
+                <View style={[
+                  styles.stepperNumber,
+                  isActive && styles.stepperNumberActive,
+                  isDone && styles.stepperNumberDone
+                ]}>
+                  {isDone ? (
+                    <CheckCircle size={12} color="#0F172A" />
+                  ) : (
+                    <Text style={[
+                      styles.stepperNumberText,
+                      isActive && styles.stepperNumberTextActive
+                    ]}>{idx + 1}</Text>
+                  )}
+                </View>
                 <Text style={[
-                  styles.pickerBtnText,
-                  patient.unit === unit && styles.pickerBtnTextActive
-                ]}>{unit}</Text>
+                  styles.stepperLabel,
+                  isActive && styles.stepperLabelActive,
+                  isDone && styles.stepperLabelDone
+                ]}>{step.label}</Text>
               </TouchableOpacity>
-            ))}
-          </View>
-        </View>
+            </React.Fragment>
+          );
+        })}
+      </View>
+    );
+  };
 
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Clinical Appearance</Text>
-          <View style={styles.pickerGrid}>
-            {(['well', 'ill', 'toxic', 'unstable'] as const).map((appearance) => {
-              const isActive = patient.appearance === appearance;
-              return (
-                <TouchableOpacity
-                  key={appearance}
-                  activeOpacity={0.7}
-                  style={[
-                    styles.pickerBtn,
-                    styles.pickerGridBtn,
-                    isActive && appearance === 'toxic' && styles.pickerBtnToxicActive,
-                    isActive && appearance === 'unstable' && styles.pickerBtnUnstableActive,
-                    isActive && appearance === 'ill' && styles.pickerBtnIllActive,
-                    isActive && appearance === 'well' && styles.pickerBtnWellActive,
-                  ]}
-                  onPress={() => setPatient(prev => ({ ...prev, appearance }))}
-                >
-                  <Text style={[
-                    styles.pickerBtnText,
-                    isActive && styles.pickerBtnTextActiveWhite
-                  ]}>{appearance}</Text>
-                </TouchableOpacity>
-              );
-            })}
-          </View>
-        </View>
-
-        {/* Toggleable Advanced Vitals */}
-        <TouchableOpacity
-          activeOpacity={0.7}
-          onPress={() => setShowVitals(!showVitals)}
-          style={styles.vitalsToggle}
-        >
-          <Activity size={14} color="#14B8A6" />
-          <Text style={styles.vitalsToggleText}>
-            {showVitals ? 'Hide Vitals & Weights' : 'Add Vitals & Weight'}
-          </Text>
-        </TouchableOpacity>
-
-        {showVitals && (
-          <View style={styles.vitalsBlock}>
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                <Text style={styles.label}>Weight (kg)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  keyboardType="numeric"
-                  placeholder="e.g. 12"
-                  placeholderTextColor="#475569"
-                  value={patient.weightKg !== undefined ? patient.weightKg.toString() : ''}
-                  onChangeText={(val) => setPatient(prev => ({ ...prev, weightKg: val ? Number(val) : undefined }))}
-                />
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>SpO2 (%)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  keyboardType="numeric"
-                  placeholder="e.g. 98"
-                  placeholderTextColor="#475569"
-                  value={patient.spo2 !== undefined ? patient.spo2.toString() : ''}
-                  onChangeText={(val) => setPatient(prev => ({ ...prev, spo2: val ? Number(val) : undefined }))}
-                />
-              </View>
-            </View>
-
-            <View style={styles.row}>
-              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-                <Text style={styles.label}>Temp (°C)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  keyboardType="numeric"
-                  placeholder="38.5"
-                  placeholderTextColor="#475569"
-                  value={patient.temperatureC !== undefined ? patient.temperatureC.toString() : ''}
-                  onChangeText={(val) => setPatient(prev => ({ ...prev, temperatureC: val ? Number(val) : undefined }))}
-                />
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Heart Rate (bpm)</Text>
-                <TextInput
-                  style={styles.textInput}
-                  keyboardType="numeric"
-                  placeholder="120"
-                  placeholderTextColor="#475569"
-                  value={patient.heartRate !== undefined ? patient.heartRate.toString() : ''}
-                  onChangeText={(val) => setPatient(prev => ({ ...prev, heartRate: val ? Number(val) : undefined }))}
-                />
-              </View>
-            </View>
-          </View>
-        )}
-
-        <View style={styles.inputGroup}>
-          <Text style={styles.label}>Clinical Notes (Optional)</Text>
-          <TextInput
-            style={[styles.textInput, styles.textArea]}
-            multiline={true}
-            numberOfLines={3}
-            placeholder="Add relevant history/findings..."
-            placeholderTextColor="#475569"
-            value={patient.notes}
-            onChangeText={(val) => setPatient(prev => ({ ...prev, notes: val }))}
-          />
-        </View>
-
-        {/* Info Badges */}
-        <View style={styles.badgeRow}>
-          <View style={styles.infoBadge}>
-            <Text style={styles.infoBadgeLabel}>Age Band</Text>
-            <Text style={styles.infoBadgeValue}>{resolvedAgeBand}</Text>
-          </View>
-          <View style={styles.infoBadge}>
-            <Text style={styles.infoBadgeLabel}>Acuity Level</Text>
-            <Text style={[
-              styles.infoBadgeValue,
-              pathway.acuity === 'emergent' && styles.textRed,
-              pathway.acuity === 'urgent' && styles.textOrange,
-            ]}>{pathway.acuity}</Text>
-          </View>
-        </View>
-      </ScrollView>
-    </View>
-  );
-
-  // Render Right Column: Clinical Safeguards (Can't miss, triggers, actions)
-  const renderRightPanel = () => {
-    const showAttendingTrigger = snapshot.attendingTriggers.length > 0;
-    const showCantMiss = patientFlow.cantMissDiagnoses.length > 0;
-    const showDisposition = currentNode.type === 'terminal' || (currentNode.dispositionCriteria && currentNode.dispositionCriteria.length > 0);
-    const showWorkup = snapshot.activeActions.length > 0;
+  // 2. Step 1: Patient Profile & Parameters Form
+  const renderProfileInputs = () => {
+    const tempStatus = patient.temperatureC !== undefined ? getVitalStatus('temp', patient.temperatureC, patient.age, patient.unit) : null;
+    const spo2Status = patient.spo2 !== undefined ? getVitalStatus('spo2', patient.spo2, patient.age, patient.unit) : null;
+    const hrStatus = patient.heartRate !== undefined ? getVitalStatus('hr', patient.heartRate, patient.age, patient.unit) : null;
+    const rrStatus = patient.respiratoryRate !== undefined ? getVitalStatus('rr', patient.respiratoryRate, patient.age, patient.unit) : null;
+    const normalVitals = getNormalVitalsRange(patient.age, patient.unit);
 
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
-          <ShieldAlert color="#F43F5E" size={18} />
-          <Text style={styles.cardTitle}>Reference & Safeguards</Text>
+          <User color="#14B8A6" size={18} />
+          <Text style={styles.cardTitle}>Patient Characteristics</Text>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
+          <Text style={styles.wizardSectionTitle}>Demographics & Appearance</Text>
+          
+          <View style={styles.row}>
+            <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+              <Text style={styles.label}>Age Value</Text>
+              <TextInput
+                style={styles.textInput}
+                keyboardType="numeric"
+                value={patient.age.toString()}
+                onChangeText={(val) => setPatient(prev => ({ ...prev, age: Number(val) || 0 }))}
+              />
+            </View>
+            <View style={[styles.inputGroup, { flex: 1 }]}>
+              <Text style={styles.label}>Age Unit</Text>
+              <View style={styles.pickerRow}>
+                {(['days', 'months', 'years'] as const).map((unit) => (
+                  <TouchableOpacity
+                    key={unit}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.pickerBtn,
+                      patient.unit === unit && styles.pickerBtnActive,
+                      { paddingVertical: 8 }
+                    ]}
+                    onPress={() => setPatient(prev => ({ ...prev, unit }))}
+                  >
+                    <Text style={[
+                      styles.pickerBtnText,
+                      patient.unit === unit && styles.pickerBtnTextActive
+                    ]}>{unit}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Clinical Appearance</Text>
+            <Text style={styles.inputHint}>Subjective clinician assessment of acuity:</Text>
+            <View style={styles.pickerGrid}>
+              {(['well', 'ill', 'toxic', 'unstable'] as const).map((appearance) => {
+                const isActive = patient.appearance === appearance;
+                return (
+                  <TouchableOpacity
+                    key={appearance}
+                    activeOpacity={0.7}
+                    style={[
+                      styles.pickerBtn,
+                      styles.pickerGridBtn,
+                      isActive && appearance === 'well' && styles.pickerBtnWellActive,
+                      isActive && appearance === 'ill' && styles.pickerBtnIllActive,
+                      isActive && appearance === 'toxic' && styles.pickerBtnToxicActive,
+                      isActive && appearance === 'unstable' && styles.pickerBtnUnstableActive,
+                    ]}
+                    onPress={() => setPatient(prev => ({ ...prev, appearance }))}
+                  >
+                    <Text style={[
+                      styles.pickerBtnText,
+                      isActive && styles.pickerBtnTextActiveWhite
+                    ]}>{appearance}</Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          </View>
+
+          <View style={styles.divider} />
+
+          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+            <Text style={styles.wizardSectionTitle}>Vital Signs & Measurements</Text>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              onPress={() => setShowVitals(!showVitals)}
+              style={styles.vitalsToggleCompact}
+            >
+              <Text style={styles.vitalsToggleCompactText}>
+                {showVitals ? 'Hide Vitals' : 'Show Vitals'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {showVitals ? (
+            <View style={styles.vitalsBlock}>
+              <View style={styles.row}>
+                {/* Temp */}
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>Temp (°C)</Text>
+                    {tempStatus && tempStatus.level !== 'normal' && (
+                      <View style={[styles.vitalBadge, tempStatus.level === 'high' ? styles.vitalBadgeRed : styles.vitalBadgeBlue]}>
+                        <Text style={styles.vitalBadgeText}>{tempStatus.label}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <TextInput
+                    style={styles.textInput}
+                    keyboardType="numeric"
+                    placeholder="e.g. 37.2"
+                    placeholderTextColor="#475569"
+                    value={patient.temperatureC !== undefined ? patient.temperatureC.toString() : ''}
+                    onChangeText={(val) => setPatient(prev => ({ ...prev, temperatureC: val ? Number(val) : undefined }))}
+                  />
+                </View>
+
+                {/* SpO2 */}
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>SpO2 (%)</Text>
+                    {spo2Status && spo2Status.level !== 'normal' && (
+                      <View style={[styles.vitalBadge, styles.vitalBadgeRed]}>
+                        <Text style={styles.vitalBadgeText}>{spo2Status.label}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <TextInput
+                    style={styles.textInput}
+                    keyboardType="numeric"
+                    placeholder="e.g. 98"
+                    placeholderTextColor="#475569"
+                    value={patient.spo2 !== undefined ? patient.spo2.toString() : ''}
+                    onChangeText={(val) => setPatient(prev => ({ ...prev, spo2: val ? Number(val) : undefined }))}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                {/* HR */}
+                <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>HR (bpm)</Text>
+                    {hrStatus && hrStatus.level !== 'normal' && (
+                      <View style={[styles.vitalBadge, styles.vitalBadgeOrange]}>
+                        <Text style={styles.vitalBadgeText}>{hrStatus.label}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <TextInput
+                    style={styles.textInput}
+                    keyboardType="numeric"
+                    placeholder={`Normal: ${normalVitals.hr[0]}-${normalVitals.hr[1]}`}
+                    placeholderTextColor="#475569"
+                    value={patient.heartRate !== undefined ? patient.heartRate.toString() : ''}
+                    onChangeText={(val) => setPatient(prev => ({ ...prev, heartRate: val ? Number(val) : undefined }))}
+                  />
+                </View>
+
+                {/* RR */}
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <View style={styles.labelRow}>
+                    <Text style={styles.label}>RR (breaths/min)</Text>
+                    {rrStatus && rrStatus.level !== 'normal' && (
+                      <View style={[styles.vitalBadge, styles.vitalBadgeOrange]}>
+                        <Text style={styles.vitalBadgeText}>{rrStatus.label}</Text>
+                      </View>
+                    )}
+                  </View>
+                  <TextInput
+                    style={styles.textInput}
+                    keyboardType="numeric"
+                    placeholder={`Normal: ${normalVitals.rr[0]}-${normalVitals.rr[1]}`}
+                    placeholderTextColor="#475569"
+                    value={patient.respiratoryRate !== undefined ? patient.respiratoryRate.toString() : ''}
+                    onChangeText={(val) => setPatient(prev => ({ ...prev, respiratoryRate: val ? Number(val) : undefined }))}
+                  />
+                </View>
+              </View>
+
+              <View style={styles.row}>
+                {/* Weight */}
+                <View style={[styles.inputGroup, { flex: 1 }]}>
+                  <Text style={styles.label}>Weight (kg)</Text>
+                  <TextInput
+                    style={styles.textInput}
+                    keyboardType="numeric"
+                    placeholder="e.g. 15"
+                    placeholderTextColor="#475569"
+                    value={patient.weightKg !== undefined ? patient.weightKg.toString() : ''}
+                    onChangeText={(val) => setPatient(prev => ({ ...prev, weightKg: val ? Number(val) : undefined }))}
+                  />
+                </View>
+              </View>
+            </View>
+          ) : (
+            <TouchableOpacity 
+              activeOpacity={0.7}
+              onPress={() => setShowVitals(true)}
+              style={styles.vitalsPromoBox}
+            >
+              <Activity size={18} color="#94A3B8" />
+              <Text style={styles.vitalsPromoText}>Click to add vital signs (HR, RR, SpO2, Temp) to trigger automatic algorithm matching.</Text>
+            </TouchableOpacity>
+          )}
+
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Clinical Presentation Notes</Text>
+            <TextInput
+              style={[styles.textInput, styles.textArea]}
+              multiline
+              numberOfLines={3}
+              placeholder="Enter brief presentation details or secondary symptoms..."
+              placeholderTextColor="#475569"
+              value={patient.notes}
+              onChangeText={(val) => setPatient(prev => ({ ...prev, notes: val }))}
+            />
+          </View>
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // 3. Step 1: Pathway Search and dynamic matches
+  const renderSuggestedPathways = () => {
+    // Determine suggested pathways (score > 10)
+    const suggested = suggestedPathwaysList.filter(p => p.score >= 10);
+    const others = suggestedPathwaysList.filter(p => p.score < 10);
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <Compass color="#14B8A6" size={18} />
+          <Text style={styles.cardTitle}>Select Pathway</Text>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Search Symptoms or Complaints</Text>
+            <View style={styles.searchContainer}>
+              <Search color="#94A3B8" size={16} style={styles.searchIcon} />
+              <TextInput
+                style={styles.searchField}
+                placeholder="e.g. fever, vomiting, seizure..."
+                placeholderTextColor="#64748B"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+              />
+            </View>
+          </View>
+
+          {suggested.length > 0 && (
+            <View style={styles.pathwaySection}>
+              <View style={styles.pathwaySectionHeader}>
+                <Sparkles size={13} color="#14B8A6" />
+                <Text style={styles.pathwaySectionTitle}>SUGGESTED PATHWAYS</Text>
+              </View>
+              {suggested.map((item) => (
+                <TouchableOpacity
+                  key={item.id}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.pathwayItem,
+                    item.id === pathway.id && styles.pathwayItemActive
+                  ]}
+                  onPress={() => selectPathway(item.id)}
+                >
+                  <View style={styles.pathwayHeaderRow}>
+                    <Text style={[
+                      styles.pathwayItemTitle,
+                      item.id === pathway.id && styles.pathwayItemTitleActive
+                    ]}>{item.title}</Text>
+                    <View style={styles.matchScoreBadge}>
+                      <Text style={styles.matchScoreBadgeText}>Match Score: {item.score}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.pathwayItemDesc}>{item.chiefComplaints.join(' · ')}</Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+          )}
+
+          <View style={styles.pathwaySection}>
+            <Text style={styles.pathwaySectionTitle}>
+              {suggested.length > 0 ? 'OTHER CLINICAL PATHWAYS' : 'AVAILABLE CLINICAL PATHWAYS'}
+            </Text>
+            {others.map((item) => (
+              <TouchableOpacity
+                key={item.id}
+                activeOpacity={0.7}
+                style={[
+                  styles.pathwayItem,
+                  item.id === pathway.id && styles.pathwayItemActive
+                ]}
+                onPress={() => selectPathway(item.id)}
+              >
+                <View style={styles.pathwayHeaderRow}>
+                  <Text style={[
+                    styles.pathwayItemTitle,
+                    item.id === pathway.id && styles.pathwayItemTitleActive
+                  ]}>{item.title}</Text>
+                  <ChevronRight color={item.id === pathway.id ? '#14B8A6' : '#475569'} size={14} />
+                </View>
+                <Text style={styles.pathwayItemDesc}>{item.chiefComplaints.join(' · ')}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          {/* Selected Pathway Preview & Proceed Button */}
+          {pathway && (
+            <View style={styles.previewPanel}>
+              <Text style={styles.previewEyebrow}>SELECTED PATHWAY</Text>
+              <Text style={styles.previewTitle}>{pathway.title}</Text>
+              <View style={{ flexDirection: 'row', marginVertical: 6, gap: 6 }}>
+                <View style={[styles.miniAcuityBadge, pathway.acuity === 'emergent' ? styles.badgeEmergent : styles.badgeUrgent]}>
+                  <Text style={styles.miniAcuityText}>{pathway.acuity}</Text>
+                </View>
+                <Text style={styles.previewVersion}>v{pathway.version}</Text>
+              </View>
+              <Text style={styles.previewWarning}>{pathway.warning}</Text>
+              
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={styles.startWizardBtn}
+                onPress={() => setActiveStep('navigate')}
+              >
+                <Text style={styles.startWizardBtnText}>Proceed to Guided Navigator ➔</Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // 4. Compact Patient Summary Sidebar for Navigator Steps
+  const renderPatientSummarySidebar = () => {
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <User color="#14B8A6" size={18} />
+          <Text style={styles.cardTitle}>Patient Context</Text>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
+          <View style={styles.summaryInfoRow}>
+            <Text style={styles.summaryInfoLabel}>Age</Text>
+            <Text style={styles.summaryInfoVal}>{patient.age} {patient.unit}</Text>
+          </View>
+          <View style={styles.summaryInfoRow}>
+            <Text style={styles.summaryInfoLabel}>Appearance</Text>
+            <Text style={[
+              styles.summaryInfoVal, 
+              patient.appearance === 'toxic' && styles.textRed,
+              patient.appearance === 'unstable' && styles.textRed,
+              patient.appearance === 'ill' && styles.textOrange,
+              patient.appearance === 'well' && styles.textTeal,
+              { fontWeight: '700' }
+            ]}>{patient.appearance}</Text>
+          </View>
+
+          {/* Vitals Summary */}
+          <View style={styles.divider} />
+          <Text style={styles.sidebarSubheading}>Vital Signs</Text>
+          
+          {patient.temperatureC !== undefined ? (
+            <View style={styles.summaryInfoRow}>
+              <Text style={styles.summaryInfoLabel}>Temp</Text>
+              <Text style={styles.summaryInfoVal}>{patient.temperatureC}°C</Text>
+            </View>
+          ) : null}
+          {patient.spo2 !== undefined ? (
+            <View style={styles.summaryInfoRow}>
+              <Text style={styles.summaryInfoLabel}>SpO2</Text>
+              <Text style={styles.summaryInfoVal}>{patient.spo2}%</Text>
+            </View>
+          ) : null}
+          {patient.heartRate !== undefined ? (
+            <View style={styles.summaryInfoRow}>
+              <Text style={styles.summaryInfoLabel}>HR</Text>
+              <Text style={styles.summaryInfoVal}>{patient.heartRate} bpm</Text>
+            </View>
+          ) : null}
+          {patient.respiratoryRate !== undefined ? (
+            <View style={styles.summaryInfoRow}>
+              <Text style={styles.summaryInfoLabel}>RR</Text>
+              <Text style={styles.summaryInfoVal}>{patient.respiratoryRate} /min</Text>
+            </View>
+          ) : null}
+          {patient.weightKg !== undefined ? (
+            <View style={styles.summaryInfoRow}>
+              <Text style={styles.summaryInfoLabel}>Weight</Text>
+              <Text style={styles.summaryInfoVal}>{patient.weightKg} kg</Text>
+            </View>
+          ) : null}
+
+          {patient.temperatureC === undefined && patient.spo2 === undefined && patient.heartRate === undefined && patient.respiratoryRate === undefined && (
+            <Text style={styles.emptyText}>No vitals entered.</Text>
+          )}
+
+          {patient.notes ? (
+            <View>
+              <View style={styles.divider} />
+              <Text style={styles.sidebarSubheading}>Notes</Text>
+              <Text style={styles.sidebarNotes}>{patient.notes}</Text>
+            </View>
+          ) : null}
+
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.editProfileBtn}
+            onPress={() => setActiveStep('profile')}
+          >
+            <Text style={styles.editProfileBtnText}>Edit Profile</Text>
+          </TouchableOpacity>
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // 5. Compact Right Panel Safeguards (Focusing strictly on Can't Miss and Attending triggers)
+  const renderRightPanelCompact = () => {
+    const showAttendingTrigger = snapshot.attendingTriggers.length > 0;
+    const showCantMiss = patientFlow.cantMissDiagnoses.length > 0;
+
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <ShieldAlert color="#EF4444" size={18} />
+          <Text style={styles.cardTitle}>Clinical Safeguards</Text>
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
           {/* Attending Triggers */}
-          {showAttendingTrigger && (
+          {showAttendingTrigger ? (
             <View style={[styles.alertBlock, styles.alertBlockRed]}>
               <View style={styles.alertHeader}>
                 <AlertTriangle color="#EF4444" size={15} />
-                <Text style={[styles.alertTitle, styles.textRed]}>ATTENDING NOTIFICATION TRIGGERS</Text>
+                <Text style={[styles.alertTitle, styles.textRed]}>ATTENDING TRIGGERS</Text>
               </View>
               {snapshot.attendingTriggers.map((trig, idx) => (
                 <Text key={idx} style={styles.alertText}>• {trig}</Text>
               ))}
             </View>
+          ) : (
+            <View style={styles.safeguardOKBlock}>
+              <CheckCircle size={14} color="#10B981" />
+              <Text style={styles.safeguardOKText}>No active attending triggers.</Text>
+            </View>
           )}
 
           {/* Can't Miss Diagnoses */}
-          {showCantMiss && (
+          {showCantMiss ? (
             <View style={[styles.alertBlock, styles.alertBlockOrange]}>
               <View style={styles.alertHeader}>
                 <ShieldAlert color="#F59E0B" size={15} />
@@ -404,13 +785,83 @@ export default function App() {
                 ))}
               </View>
             </View>
+          ) : (
+            <View style={styles.safeguardOKBlock}>
+              <CheckCircle size={14} color="#10B981" />
+              <Text style={styles.safeguardOKText}>No high-risk diagnoses surfaced.</Text>
+            </View>
           )}
 
-          {/* Recommended Workup Checklist */}
-          {showWorkup && (
-            <View style={styles.referenceSection}>
-              <Text style={styles.sectionHeading}>ACTIVE CLINICAL WORKUP</Text>
-              <Text style={styles.sectionSubtitle}>Check off actions as they are initiated:</Text>
+          <View style={styles.divider} />
+          <Text style={styles.sidebarSubheading}>Pathway Protocol</Text>
+          <Text style={styles.activePathwayLabel}>{pathway.title}</Text>
+          <Text style={styles.activeNodeLabel}>Active Node: {currentNode.title}</Text>
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // 6. Step 3: Unified Management Recommendations & Care Plan
+  const renderFinalRecommendations = () => {
+    const showWorkup = snapshot.activeActions.length > 0;
+    const showDisposition = (currentNode.dispositionCriteria && currentNode.dispositionCriteria.length > 0) || patientFlow.dispositionReadinessItems.length > 0;
+    const showReassess = currentNode.reassess && currentNode.reassess.length > 0;
+
+    return (
+      <View style={styles.card}>
+        <View style={[styles.cardHeader, { backgroundColor: '#1E293B' }]}>
+          <FileText color="#10B981" size={18} />
+          <Text style={styles.cardTitle}>Management Care Plan & Recommendations</Text>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
+          {/* Handoff Summary Header */}
+          <View style={styles.handoffHeader}>
+            <View>
+              <Text style={styles.handoffTitle}>PEDIATRIC PATIENT HANDOFF</Text>
+              <Text style={styles.handoffSubtitle}>
+                {patient.age} {patient.unit} presenting with "{patient.complaint || pathway.title}"
+              </Text>
+            </View>
+            <View style={[styles.miniAcuityBadge, pathway.acuity === 'emergent' ? styles.badgeEmergent : styles.badgeUrgent]}>
+              <Text style={styles.miniAcuityText}>{pathway.acuity}</Text>
+            </View>
+          </View>
+
+          {/* Vitals Summary */}
+          <View style={styles.handoffVitalsSummary}>
+            <Text style={styles.handoffVitalsTitle}>CLINICAL CHARACTERISTICS:</Text>
+            <Text style={styles.handoffVitalsText}>
+              • Appearance: <Text style={{fontWeight: '700'}}>{patient.appearance}</Text>
+              {patient.temperatureC !== undefined ? `  • Temp: ${patient.temperatureC}°C` : ''}
+              {patient.spo2 !== undefined ? `  • SpO2: ${patient.spo2}%` : ''}
+              {patient.heartRate !== undefined ? `  • HR: ${patient.heartRate} bpm` : ''}
+              {patient.respiratoryRate !== undefined ? `  • RR: ${patient.respiratoryRate} /min` : ''}
+              {patient.weightKg !== undefined ? `  • Weight: ${patient.weightKg} kg` : ''}
+            </Text>
+            {patient.notes ? (
+              <Text style={styles.handoffNotesText}>• Presentation Notes: {patient.notes}</Text>
+            ) : null}
+          </View>
+
+          {/* Sepsis/Meningitis Warning Alert */}
+          {snapshot.activeFlags.length > 0 && (
+            <View style={[styles.alertBlock, styles.alertBlockRed, { marginVertical: 12 }]}>
+              <View style={styles.alertHeader}>
+                <AlertTriangle color="#EF4444" size={15} />
+                <Text style={[styles.alertTitle, styles.textRed]}>CRITICAL CLINICAL FLAGS</Text>
+              </View>
+              {snapshot.activeFlags.map((flag, idx) => (
+                <Text key={idx} style={styles.alertText}>• {flag}</Text>
+              ))}
+            </View>
+          )}
+
+          {/* Active Workup Checklist */}
+          {showWorkup ? (
+            <View style={styles.wizardSection}>
+              <Text style={styles.sectionHeading}>ACTIVE CLINICAL WORKUP TASKS</Text>
+              <Text style={styles.sectionSubtitle}>Ensure the following diagnostic and treatment tasks are initiated:</Text>
               
               {snapshot.activeActions.map((action, idx) => {
                 const isDone = !!completedActions[action];
@@ -418,27 +869,42 @@ export default function App() {
                   <TouchableOpacity
                     key={idx}
                     activeOpacity={0.7}
-                    style={styles.checklistRow}
+                    style={styles.checklistRowLarge}
                     onPress={() => toggleAction(action)}
                   >
-                    <View style={[styles.checkbox, isDone && styles.checkboxChecked]}>
-                      {isDone && <CheckCircle size={12} color="#FFFFFF" />}
+                    <View style={[styles.checkboxLarge, isDone && styles.checkboxChecked]}>
+                      {isDone && <CheckCircle size={14} color="#FFFFFF" />}
                     </View>
-                    <Text style={[styles.checklistText, isDone && styles.checklistTextChecked]}>
+                    <Text style={[styles.checklistTextLarge, isDone && styles.checklistTextChecked]}>
                       {action}
                     </Text>
                   </TouchableOpacity>
                 );
               })}
             </View>
+          ) : (
+            <View style={styles.recommendationEmptyState}>
+              <Text style={styles.recommendationEmptyStateText}>No active workup items required for this pathway branch.</Text>
+            </View>
           )}
 
-          {/* Reassessment / Disposition */}
+          {/* Reassessments */}
+          {showReassess && (
+            <View style={styles.wizardSection}>
+              <Text style={[styles.sectionHeading, { color: '#818CF8' }]}>REASSESSMENT CHECKPOINTS</Text>
+              <Text style={styles.sectionSubtitle}>Frequently re-evaluate the patient for the following criteria:</Text>
+              {currentNode.reassess?.map((re, idx) => (
+                <Text key={idx} style={styles.reassessTextLarge}>• {re}</Text>
+              ))}
+            </View>
+          )}
+
+          {/* Disposition Readiness Criteria */}
           {showDisposition && (
-            <View style={[styles.alertBlock, styles.alertBlockTeal]}>
+            <View style={[styles.alertBlock, styles.alertBlockTeal, { marginVertical: 12 }]}>
               <View style={styles.alertHeader}>
                 <CheckCircle color="#10B981" size={15} />
-                <Text style={[styles.alertTitle, styles.textTeal]}>DISPOSITION CRITERIA</Text>
+                <Text style={[styles.alertTitle, styles.textTeal]}>DISPOSITION & READINESS CRITERIA</Text>
               </View>
               {(currentNode.dispositionCriteria || patientFlow.dispositionReadinessItems).map((crit, idx) => (
                 <Text key={idx} style={[styles.alertText, { color: '#E2E8F0' }]}>• {crit}</Text>
@@ -446,22 +912,33 @@ export default function App() {
             </View>
           )}
 
-          {/* Normal Node Reassessments */}
-          {!showDisposition && currentNode.reassess && currentNode.reassess.length > 0 && (
-            <View style={styles.referenceSection}>
-              <Text style={[styles.sectionHeading, { color: '#818CF8' }]}>REASSESSMENT CHECKPOINTS</Text>
-              {currentNode.reassess.map((re, idx) => (
-                <Text key={idx} style={styles.reassessText}>• {re}</Text>
-              ))}
-            </View>
-          )}
+          <View style={styles.divider} />
 
-          {!showAttendingTrigger && !showCantMiss && !showWorkup && !showDisposition && (
-            <View style={styles.emptySafeguards}>
-              <Compass color="#475569" size={32} />
-              <Text style={styles.emptySafeguardsText}>Navigate the pathway nodes to populate clinical recommendations, safeguards, and active care tasks.</Text>
-            </View>
-          )}
+          <View style={styles.recommendationsActions}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.backToNavigatorBtn}
+              onPress={() => setActiveStep('navigate')}
+            >
+              <Text style={styles.backToNavigatorBtnText}>Back to Navigator</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.resetAllBtn}
+              onPress={() => {
+                setPatient(initialPatientContext);
+                setSearchQuery('');
+                setPathwayId(pathwayRegistry[0].id);
+                setNodeId(pathwayRegistry[0].startNodeId);
+                setHistory([]);
+                setCompletedActions({});
+                setActiveStep('profile');
+              }}
+            >
+              <Text style={styles.resetAllBtnText}>Clear & Start New Patient</Text>
+            </TouchableOpacity>
+          </View>
         </ScrollView>
       </View>
     );
@@ -638,42 +1115,120 @@ export default function App() {
   };
 
   // Main Desktop Render
-  const renderDesktop = () => (
-    <View style={styles.desktopContainer}>
-      <View style={styles.sidebarColumn}>
-        {renderLeftPanel()}
-      </View>
-      <View style={styles.mainColumn}>
-        {/* Mode Selector */}
-        <View style={styles.modeTabs}>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={[styles.modeTab, appMode === 'guided' && styles.modeTabActive]}
-            onPress={() => setAppMode('guided')}
-          >
-            <Compass size={16} color={appMode === 'guided' ? '#14B8A6' : '#94A3B8'} />
-            <Text style={[styles.modeTabText, appMode === 'guided' && styles.modeTabTextActive]}>Guided Navigator</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            activeOpacity={0.7}
-            style={[styles.modeTab, appMode === 'reference' && styles.modeTabActive]}
-            onPress={() => setAppMode('reference')}
-          >
-            <Map size={16} color={appMode === 'reference' ? '#14B8A6' : '#94A3B8'} />
-            <Text style={[styles.modeTabText, appMode === 'reference' && styles.modeTabTextActive]}>Algorithm Explorer</Text>
-          </TouchableOpacity>
+  const renderDesktop = () => {
+    if (activeStep === 'profile') {
+      return (
+        <View style={styles.desktopContainer}>
+          <View style={styles.sidebarColumn}>
+            {renderProfileInputs()}
+          </View>
+          <View style={[styles.mainColumn, { flex: 2 }]}>
+            {renderSuggestedPathways()}
+          </View>
         </View>
+      );
+    }
 
-        {appMode === 'guided' ? renderGuidedMode() : renderReferenceMode()}
+    if (activeStep === 'recommendations') {
+      return (
+        <View style={styles.desktopContainerWide}>
+          <View style={styles.wideColumn}>
+            {renderFinalRecommendations()}
+          </View>
+        </View>
+      );
+    }
+
+    // Default: 'navigate' step
+    return (
+      <View style={styles.desktopContainer}>
+        <View style={styles.sidebarColumn}>
+          {renderPatientSummarySidebar()}
+        </View>
+        <View style={styles.mainColumn}>
+          {/* Mode Selector */}
+          <View style={styles.modeTabs}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.modeTab, appMode === 'guided' && styles.modeTabActive]}
+              onPress={() => setAppMode('guided')}
+            >
+              <Compass size={16} color={appMode === 'guided' ? '#14B8A6' : '#94A3B8'} />
+              <Text style={[styles.modeTabText, appMode === 'guided' && styles.modeTabTextActive]}>Guided Navigator</Text>
+            </TouchableOpacity>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.modeTab, appMode === 'reference' && styles.modeTabActive]}
+              onPress={() => setAppMode('reference')}
+            >
+              <Map size={16} color={appMode === 'reference' ? '#14B8A6' : '#94A3B8'} />
+              <Text style={[styles.modeTabText, appMode === 'reference' && styles.modeTabTextActive]}>Algorithm Explorer</Text>
+            </TouchableOpacity>
+          </View>
+
+          {appMode === 'guided' ? renderGuidedMode() : renderReferenceMode()}
+
+          {/* Quick proceed to care plan button */}
+          <View style={styles.navigationProceedContainer}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={styles.proceedToHandoffBtn}
+              onPress={() => setActiveStep('recommendations')}
+            >
+              <Text style={styles.proceedToHandoffBtnText}>Generate Care Plan & Handoff ➔</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+        <View style={styles.sidebarColumn}>
+          {renderRightPanelCompact()}
+        </View>
       </View>
-      <View style={styles.sidebarColumn}>
-        {renderRightPanel()}
-      </View>
-    </View>
-  );
+    );
+  };
 
   // Main Mobile Render
   const renderMobile = () => {
+    if (activeStep === 'profile') {
+      return (
+        <View style={styles.mobileContainer}>
+          <View style={styles.mobileMainArea}>
+            {mobileTab === 'context' ? renderProfileInputs() : renderSuggestedPathways()}
+          </View>
+
+          <View style={styles.mobileTabs}>
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.mobileTabBtn, mobileTab === 'context' && styles.mobileTabBtnActive]}
+              onPress={() => setMobileTab('context')}
+            >
+              <User size={20} color={mobileTab === 'context' ? '#14B8A6' : '#64748B'} />
+              <Text style={[styles.mobileTabText, mobileTab === 'context' && styles.mobileTabTextActive]}>Patient Info</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.mobileTabBtn, mobileTab === 'navigator' && styles.mobileTabBtnActive]}
+              onPress={() => setMobileTab('navigator')}
+            >
+              <Compass size={20} color={mobileTab === 'navigator' ? '#14B8A6' : '#64748B'} />
+              <Text style={[styles.mobileTabText, mobileTab === 'navigator' && styles.mobileTabTextActive]}>Select Pathway</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      );
+    }
+
+    if (activeStep === 'recommendations') {
+      return (
+        <View style={styles.mobileContainer}>
+          <View style={styles.mobileMainArea}>
+            {renderFinalRecommendations()}
+          </View>
+        </View>
+      );
+    }
+
+    // Default: 'navigate' step
     return (
       <View style={styles.mobileContainer}>
         {/* Mobile Header Context Summary */}
@@ -681,7 +1236,7 @@ export default function App() {
           <View style={styles.mobileSummaryLeft}>
             <Text style={styles.mobileSummaryTitle}>{pathway.title}</Text>
             <Text style={styles.mobileSummaryContext}>
-              {ageDescription} presenting with "{patient.complaint || 'symptom'}" ({patient.appearance})
+              {ageDescription} • {patient.appearance}
             </Text>
           </View>
           <View style={styles.mobileSummaryRight}>
@@ -691,7 +1246,7 @@ export default function App() {
 
         {/* View switching based on active Mobile Tab */}
         <View style={styles.mobileMainArea}>
-          {mobileTab === 'context' && renderLeftPanel()}
+          {mobileTab === 'context' && renderPatientSummarySidebar()}
           {mobileTab === 'navigator' && (
             <View style={{ flex: 1 }}>
               {/* Guided vs Reference mode toggles inside navigator tab */}
@@ -713,9 +1268,18 @@ export default function App() {
               </View>
 
               {appMode === 'guided' ? renderGuidedMode() : renderReferenceMode()}
+
+              {/* Mobile Quick proceed to handoff button */}
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={[styles.proceedToHandoffBtn, { marginTop: 10 }]}
+                onPress={() => setActiveStep('recommendations')}
+              >
+                <Text style={styles.proceedToHandoffBtnText}>Generate Care Plan ➔</Text>
+              </TouchableOpacity>
             </View>
           )}
-          {mobileTab === 'safeguards' && renderRightPanel()}
+          {mobileTab === 'safeguards' && renderRightPanelCompact()}
         </View>
 
         {/* Mobile Navigation Tabs */}
@@ -726,7 +1290,7 @@ export default function App() {
             onPress={() => setMobileTab('context')}
           >
             <User size={20} color={mobileTab === 'context' ? '#14B8A6' : '#64748B'} />
-            <Text style={[styles.mobileTabText, mobileTab === 'context' && styles.mobileTabTextActive]}>Patient Info</Text>
+            <Text style={[styles.mobileTabText, mobileTab === 'context' && styles.mobileTabTextActive]}>Context</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
@@ -780,6 +1344,9 @@ export default function App() {
           )}
         </View>
       </View>
+
+      {/* Stepper Wizard Indicator */}
+      {renderStepper()}
 
       {/* Main Body */}
       {isDesktop ? renderDesktop() : renderMobile()}
@@ -1720,5 +2287,461 @@ const styles = StyleSheet.create({
   mobileTabTextActive: {
     color: '#14B8A6',
     fontWeight: '800',
+  },
+  // Stepper Styles
+  stepperContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 24,
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    justifyContent: 'center',
+  },
+  stepperStep: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    opacity: 0.6,
+  },
+  stepperStepActive: {
+    opacity: 1,
+  },
+  stepperStepDone: {
+    opacity: 0.95,
+  },
+  stepperLine: {
+    flex: 1,
+    maxWidth: 60,
+    height: 2,
+    backgroundColor: '#1E293B',
+    marginHorizontal: 12,
+  },
+  stepperNumber: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: '#1E293B',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 8,
+  },
+  stepperNumberActive: {
+    backgroundColor: '#14B8A6',
+  },
+  stepperNumberDone: {
+    backgroundColor: '#10B981',
+  },
+  stepperNumberText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  stepperNumberTextActive: {
+    color: '#0F172A',
+  },
+  stepperLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
+  },
+  stepperLabelActive: {
+    color: '#14B8A6',
+    fontWeight: '700',
+  },
+  stepperLabelDone: {
+    color: '#F8FAFC',
+  },
+
+  // Wizard Content Styles
+  wizardSectionTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 10,
+  },
+  wizardSection: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    marginBottom: 16,
+  },
+  inputHint: {
+    fontSize: 11,
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  vitalsToggleCompact: {
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+  },
+  vitalsToggleCompactText: {
+    fontSize: 10,
+    color: '#14B8A6',
+    fontWeight: '700',
+  },
+  vitalsPromoBox: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: '#334155',
+    borderRadius: 12,
+    padding: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 16,
+    gap: 8,
+  },
+  vitalsPromoText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 16,
+  },
+  labelRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 4,
+  },
+  vitalBadge: {
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  vitalBadgeRed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.12)',
+  },
+  vitalBadgeBlue: {
+    backgroundColor: 'rgba(59, 130, 246, 0.12)',
+  },
+  vitalBadgeOrange: {
+    backgroundColor: 'rgba(245, 158, 11, 0.12)',
+  },
+  vitalBadgeText: {
+    fontSize: 9,
+    fontWeight: '700',
+    color: '#14B8A6',
+  },
+  pathwaySection: {
+    marginBottom: 16,
+  },
+  pathwaySectionHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    marginBottom: 8,
+  },
+  pathwaySectionTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 0.5,
+  },
+  matchScoreBadge: {
+    backgroundColor: 'rgba(20, 184, 166, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  matchScoreBadgeText: {
+    fontSize: 9,
+    color: '#14B8A6',
+    fontWeight: '700',
+  },
+  previewPanel: {
+    backgroundColor: '#1E293B',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginTop: 12,
+  },
+  previewEyebrow: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.5,
+  },
+  previewTitle: {
+    fontSize: 16,
+    fontWeight: '850',
+    color: '#F8FAFC',
+  },
+  miniAcuityBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderRadius: 6,
+  },
+  badgeEmergent: {
+    backgroundColor: 'rgba(244, 63, 94, 0.15)',
+  },
+  badgeUrgent: {
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+  },
+  miniAcuityText: {
+    fontSize: 9,
+    fontWeight: '850',
+    color: '#F43F5E',
+    textTransform: 'uppercase',
+  },
+  previewVersion: {
+    fontSize: 10,
+    color: '#64748B',
+    alignSelf: 'center',
+  },
+  previewWarning: {
+    fontSize: 11,
+    color: '#CBD5E1',
+    lineHeight: 16,
+    marginBottom: 12,
+  },
+  startWizardBtn: {
+    backgroundColor: '#14B8A6',
+    paddingVertical: 10,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#14B8A6',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  startWizardBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
+  },
+  
+  // Compact summary styles
+  summaryInfoRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  summaryInfoLabel: {
+    fontSize: 12,
+    color: '#64748B',
+  },
+  summaryInfoVal: {
+    fontSize: 12,
+    color: '#E2E8F0',
+  },
+  sidebarSubheading: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#475569',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginVertical: 10,
+  },
+  sidebarNotes: {
+    fontSize: 11,
+    color: '#94A3B8',
+    lineHeight: 16,
+    backgroundColor: '#0F172A',
+    padding: 10,
+    borderRadius: 8,
+  },
+  editProfileBtn: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingVertical: 8,
+    borderRadius: 8,
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  editProfileBtnText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '700',
+  },
+  safeguardOKBlock: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.1)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 10,
+  },
+  safeguardOKText: {
+    fontSize: 11,
+    color: '#10B981',
+    fontWeight: '600',
+  },
+  activePathwayLabel: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#E2E8F0',
+  },
+  activeNodeLabel: {
+    fontSize: 11,
+    color: '#14B8A6',
+    marginTop: 4,
+  },
+
+  // Final recommendations styles
+  handoffHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    marginBottom: 12,
+  },
+  handoffTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#14B8A6',
+    letterSpacing: 0.5,
+  },
+  handoffSubtitle: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  handoffVitalsSummary: {
+    backgroundColor: '#0F172A',
+    padding: 12,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#1E293B',
+    marginBottom: 16,
+  },
+  handoffVitalsTitle: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#475569',
+    marginBottom: 6,
+  },
+  handoffVitalsText: {
+    fontSize: 11,
+    color: '#E2E8F0',
+    lineHeight: 16,
+  },
+  handoffNotesText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    marginTop: 6,
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+    paddingTop: 6,
+  },
+  checklistRowLarge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  checkboxLarge: {
+    width: 20,
+    height: 20,
+    borderRadius: 6,
+    borderWidth: 2,
+    borderColor: '#475569',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 12,
+  },
+  checklistTextLarge: {
+    fontSize: 13,
+    color: '#E2E8F0',
+    fontWeight: '600',
+  },
+  reassessTextLarge: {
+    fontSize: 12,
+    color: '#E2E8F0',
+    lineHeight: 18,
+    marginVertical: 4,
+  },
+  recommendationEmptyState: {
+    padding: 16,
+    alignItems: 'center',
+  },
+  recommendationEmptyStateText: {
+    fontSize: 11,
+    color: '#64748B',
+  },
+  recommendationsActions: {
+    flexDirection: 'row',
+    gap: 12,
+    marginTop: 16,
+  },
+  backToNavigatorBtn: {
+    flex: 1,
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  backToNavigatorBtnText: {
+    fontSize: 13,
+    color: '#F8FAFC',
+    fontWeight: '700',
+  },
+  resetAllBtn: {
+    flex: 1,
+    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(239, 68, 68, 0.2)',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+  },
+  resetAllBtnText: {
+    fontSize: 13,
+    color: '#EF4444',
+    fontWeight: '700',
+  },
+
+  // Desktop specific containers
+  desktopContainerWide: {
+    flex: 1,
+    flexDirection: 'row',
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  wideColumn: {
+    flex: 1,
+  },
+  navigationProceedContainer: {
+    marginTop: 12,
+    paddingTop: 12,
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+  },
+  proceedToHandoffBtn: {
+    backgroundColor: '#10B981',
+    paddingVertical: 12,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    shadowColor: '#10B981',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+  },
+  proceedToHandoffBtnText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#0F172A',
   },
 });
