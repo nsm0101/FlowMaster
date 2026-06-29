@@ -1,0 +1,463 @@
+[
+  {
+    "id": "pals-uti",
+    "title": "Urinary Tract Infection (UTI)",
+    "version": "2026.1",
+    "chiefComplaints": ["uti", "dysuria", "urinary frequency", "unexplained fever", "smelly urine"],
+    "tags": ["Infection", "Fever", "UTI"],
+    "acuity": "urgent",
+    "warning": "Utilize UTICalc for infants < 24 months to estimate probability before invasive catheterization.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Age Stratification",
+        "prompt": "Is the patient age < 24 months or >= 24 months?",
+        "options": [
+          { "label": "Age < 24 months (fever without source)", "next": "infant_uticalc" },
+          { "label": "Age >= 24 months (verbal child)", "next": "verbal_child" }
+        ]
+      },
+      "infant_uticalc": {
+        "id": "infant_uticalc",
+        "type": "decision",
+        "title": "UTICalc Risk Probability",
+        "prompt": "Apply UTICalc risk factors (gender, race, temp duration, lack of other source). Is the calculated probability >= 1%?",
+        "options": [
+          { "label": "Probability >= 1% (obtain specimen)", "next": "obtain_urine" },
+          { "label": "Probability < 1% (low risk)", "next": "observation" }
+        ]
+      },
+      "verbal_child": {
+        "id": "verbal_child",
+        "type": "decision",
+        "title": "Symptoms and POC UA",
+        "prompt": "Evaluate child for dysuria, pollakiuria, abdominal/back pain, and obtain clean-catch UA. Is UA positive for leukocyte esterase or nitrites?",
+        "options": [
+          { "label": "POC UA Positive", "next": "empiric_abx" },
+          { "label": "POC UA Negative", "next": "observation" }
+        ]
+      },
+      "obtain_urine": {
+        "id": "obtain_urine",
+        "type": "checkpoint",
+        "title": "Urine Specimen Collection",
+        "prompt": "Obtain urine specimen via catheterization (preferred for non-toilet-trained) or clean-catch. Perform POC UA. Is leukocyte esterase or nitrite positive?",
+        "options": [
+          { "label": "Positive UA", "next": "empiric_abx" },
+          { "label": "Negative UA", "next": "observation" }
+        ]
+      },
+      "empiric_abx": {
+        "id": "empiric_abx",
+        "type": "terminal",
+        "title": "Empiric Antibiotics & Culture",
+        "prompt": "Send urine for culture and initiate empiric antibiotics (Cephalosporin: Cefdinir or Cephalexin; or IV Ceftriaxone if toxic/unable to tolerate PO).",
+        "actions": [
+          "Send urine specimen for culture & sensitivity",
+          "Initiate Cefdinir 14 mg/kg/day PO or Cephalexin 50-100 mg/kg/day PO",
+          "If toxic/vomiting, administer Ceftriaxone 50 mg/kg IV/IM"
+        ],
+        "cantMiss": [
+          "Pyelonephritis",
+          "Renal Abscess",
+          "Urosepsis"
+        ]
+      },
+      "observation": {
+        "id": "observation",
+        "type": "terminal",
+        "title": "Clinical Observation & Reassurance",
+        "prompt": "UTI is unlikely. Manage symptoms, observe for clinical deterioration, and follow up other fever sources.",
+        "actions": [
+          "Acetaminophen or Ibuprofen for pain/fever",
+          "Maintain hydration PO",
+          "Safe discharge with return precautions if fever persists"
+        ],
+        "cantMiss": [
+          "Occult Sepsis",
+          "Other focus of infection (otitis, pneumonia)"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-ssti",
+    "title": "SSTI Cellulitis / Abscess",
+    "version": "2026.1",
+    "chiefComplaints": ["cellulitis", "abscess", "boil", "skin infection", "erythema", "wound drainage"],
+    "tags": ["Infection", "SSTI", "Surgical"],
+    "acuity": "routine",
+    "warning": "Exclude necrotizing fasciitis immediately in patients with out-of-proportion pain, crepitus, or rapid progression.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Initial Presentation",
+        "prompt": "Examine the area for fluctuance, induration, and systemic signs of toxemia (fever, tachycardia, lethargy):",
+        "options": [
+          { "label": "Systemic Toxemia or rapidly spreading erythema", "next": "systemic_infection" },
+          { "label": "Localized swelling/redness without toxic appearance", "next": "localized_exam" }
+        ]
+      },
+      "localized_exam": {
+        "id": "localized_exam",
+        "type": "decision",
+        "title": "Fluctuance & Abscess Determination",
+        "prompt": "Is there a palpable fluid pocket (fluctuance) or concern for underlying abscess (bedside ultrasound useful)?",
+        "options": [
+          { "label": "Definite Abscess (Fluctuant mass)", "next": "drainage_req" },
+          { "label": "Non-purulent Cellulitis (Erythema/induration only)", "next": "cellulitis_tx" }
+        ]
+      },
+      "drainage_req": {
+        "id": "drainage_req",
+        "type": "terminal",
+        "title": "Incision & Drainage (I&D)",
+        "prompt": "Perform local Incision & Drainage. Obtain wound culture. Prescribe oral antibiotics (TMP-SMX or Clindamycin for MRSA coverage) if cellulitis area is large or child is immunocompromised.",
+        "actions": [
+          "Perform I&D under local anesthesia or procedural sedation",
+          "Pack loosely if cavity > 5cm",
+          "Obtain wound purulent fluid culture",
+          "Initiate TMP-SMX or Clindamycin PO"
+        ],
+        "cantMiss": [
+          "MRSA Infection",
+          "Necrotizing Fasciitis",
+          "Osteomyelitis / Joint spread"
+        ]
+      },
+      "cellulitis_tx": {
+        "id": "cellulitis_tx",
+        "type": "terminal",
+        "title": "Cellulitis Treatment",
+        "prompt": "Circle the margin of erythema. Initiate oral antibiotics (Cephalexin for MSSA/Strep; or Clindamycin/TMP-SMX if MRSA suspected). Schedule 24-48h clinical recheck.",
+        "actions": [
+          "Mark erythema border with skin pen",
+          "Initiate Cephalexin 50-75 mg/kg/day PO or Clindamycin 30-40 mg/kg/day PO",
+          "Counsel family on returning if redness expands past the line"
+        ],
+        "cantMiss": [
+          "Necrotizing Fasciitis",
+          "Orbital/Periorbital spread"
+        ]
+      },
+      "systemic_infection": {
+        "id": "systemic_infection",
+        "type": "terminal",
+        "title": "Inpatient Admission & IV Antibiotics",
+        "prompt": "Admit patient for IV Clindamycin or Vancomycin. Consult Pediatric Surgery if necrotizing fasciitis is suspected.",
+        "actions": [
+          "Obtain blood culture and CBC",
+          "Initiate IV Clindamycin 40 mg/kg/day or IV Vancomycin 15 mg/kg/dose",
+          "Urgent surgical consultation for suspected necrotizing infection"
+        ],
+        "cantMiss": [
+          "Necrotizing Fasciitis (Gas on X-ray, severe pain)",
+          "Toxic Shock Syndrome"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-dehydration",
+    "title": "Gastroenteritis & Dehydration",
+    "version": "2026.1",
+    "chiefComplaints": ["vomiting", "diarrhea", "dehydration", "poor intake", "stomach bug"],
+    "tags": ["GI", "Dehydration", "Fluids"],
+    "acuity": "urgent",
+    "warning": "Assess for surgical causes (appendicitis, intussusception, malrotation) in patients with bilious emesis, severe localized abdominal pain, or blood in stool.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Severity Assessment",
+        "prompt": "Evaluate patient for clinical signs of dehydration (skin turgor, mucous membranes, fontanelle, tear production, capillary refill):",
+        "options": [
+          { "label": "Severe Dehydration / Shock (Cap refill >3s, cool skin, lethargic)", "next": "iv_resusc" },
+          { "label": "Mild to Moderate Dehydration (Dry lips, decreased tears, alert)", "next": "ort_trial" }
+        ]
+      },
+      "ort_trial": {
+        "id": "ort_trial",
+        "type": "decision",
+        "title": "Oral Rehydration Therapy (ORT)",
+        "prompt": "Administer Ondansetron (Zofran) if vomiting, and initiate ORT (5 ml every 2-5 mins of Oral Electrolyte Solution). Did the patient tolerate ORT?",
+        "options": [
+          { "label": "Tolerated (no emesis, urine output achieved)", "next": "safe_discharge" },
+          { "label": "Failed ORT (persistent vomiting, refuses PO fluids)", "next": "iv_rehydration" }
+        ]
+      },
+      "iv_rehydration": {
+        "id": "iv_rehydration",
+        "type": "terminal",
+        "title": "IV Rehydration (Mild/Moderate)",
+        "prompt": "Place peripheral IV. Administer 20 mL/kg Isotonic Crystalloid (Normal Saline or Lactated Ringer's) over 1 hour. Re-evaluate. Consider adding 5% Dextrose once emesis ceases.",
+        "actions": [
+          "Peripheral IV access",
+          "Crystalloid bolus 20 mL/kg IV over 1 hour",
+          "Recheck electrolytes (Sodium, Potassium) if IV fluid therapy is prolonged"
+        ],
+        "cantMiss": [
+          "Intussusception",
+          "Appendicitis",
+          "Diabetic Ketoacidosis (DKA)"
+        ]
+      },
+      "iv_resusc": {
+        "id": "iv_resusc",
+        "type": "terminal",
+        "title": "Emergent Fluid Resuscitation",
+        "prompt": "Secure IV/IO immediately. Administer 20 mL/kg Isotonic Crystalloid bolus over 10-20 minutes. Repeat as needed up to 60 mL/kg. Check blood gas, glucose, and electrolytes.",
+        "actions": [
+          "Emergent IV/IO access",
+          "Isotonic Crystalloid 20 mL/kg bolus IV/IO over 15 minutes",
+          "Draw point-of-care glucose, blood gas, basic metabolic panel",
+          "Admit to inpatient / ICU"
+        ],
+        "cantMiss": [
+          "Septic Shock",
+          "Diabetic Ketoacidosis (DKA)",
+          "Bowel Obstruction / Volvulus"
+        ]
+      },
+      "safe_discharge": {
+        "id": "safe_discharge",
+        "type": "terminal",
+        "title": "Home Management Plan",
+        "prompt": "Discharge home with education on slow oral fluid administration, normal wet diapers, and strict return precautions.",
+        "actions": [
+          "Discharge home, counsel on oral electrolyte maintenance therapy",
+          "Review signs of worsening dehydration (no urine for >8h, extreme lethargy)"
+        ],
+        "cantMiss": [
+          "Atypical appendicitis",
+          "Urinary Tract Infection (UTI)"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-fb",
+    "title": "Foreign Body Ingestion",
+    "version": "2026.1",
+    "chiefComplaints": ["foreign body", "swallowed coin", "swallowed button battery", "swallowed magnet", "choking"],
+    "tags": ["Toxicology", "Surgery", "Ingestion"],
+    "acuity": "urgent",
+    "warning": "Button batteries and multiple magnets are surgical emergencies that can cause rapid necrosis and perforation.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Object Classification",
+        "prompt": "Determine the type of swallowed object based on history/X-ray:",
+        "options": [
+          { "label": "Button Battery", "next": "button_battery" },
+          { "label": "Magnets (Multiple) or Sharp Object", "next": "emergent_extraction" },
+          { "label": "Single Blunt Object (e.g., coin)", "next": "blunt_object" }
+        ]
+      },
+      "button_battery": {
+        "id": "button_battery",
+        "type": "decision",
+        "title": "Button Battery Location",
+        "prompt": "Obtain urgent biplanar X-ray (neck/chest/abdomen). Where is the battery located?",
+        "options": [
+          { "label": "Esophagus (emergent removal required)", "next": "emergent_extraction" },
+          { "label": "Stomach or past pylorus (asymptomatic patient)", "next": "battery_past_pylorus" }
+        ]
+      },
+      "emergent_extraction": {
+        "id": "emergent_extraction",
+        "type": "terminal",
+        "title": "Emergent Endoscopy / Surgical Consultation",
+        "prompt": "Keep NPO. Consult GI or Pediatric Surgery immediately for emergency endoscopic removal (within 2 hours for esophageal button batteries). Do not delay.",
+        "actions": [
+          "Keep strictly NPO",
+          "Call GI / Surgery fellow on-call for emergency endoscopy",
+          "If button battery ingested <12 hours ago, administer honey (10 mL PO) to child > 1 year every 10 mins as a buffer"
+        ],
+        "cantMiss": [
+          "Esophageal Perforation",
+          "Aortoesophageal Fistula",
+          "Bowel Necrosis / Peritonitis"
+        ]
+      },
+      "blunt_object": {
+        "id": "blunt_object",
+        "type": "decision",
+        "title": "Blunt Object Location",
+        "prompt": "Obtain X-ray. Where is the coin/object located?",
+        "options": [
+          { "label": "Esophagus (symptomatic or >24 hours)", "next": "emergent_extraction" },
+          { "label": "Stomach (asymptomatic)", "next": "discharge_home" }
+        ]
+      },
+      "battery_past_pylorus": {
+        "id": "battery_past_pylorus",
+        "type": "terminal",
+        "title": "Home Observation & Stool Checks",
+        "prompt": "Discharge home. Advise regular diet. Confirm passage in stool within 7-10 days. Repeat X-ray in 4-7 days if passage is not confirmed.",
+        "actions": [
+          "Discharge home; instruct parents to screen all stools",
+          "Repeat X-ray in 7 days to confirm clearance if not seen in stool"
+        ],
+        "cantMiss": [
+          "Gastric ulceration",
+          "Intestinal perforation"
+        ]
+      },
+      "discharge_home": {
+        "id": "discharge_home",
+        "type": "terminal",
+        "title": "Clinical Observation at Home",
+        "prompt": "Object past esophagus in asymptomatic patient. Discharge home. High probability of spontaneous passage. Return for fever, vomiting, abdominal pain, or blood in stool.",
+        "actions": [
+          "Reassure family; normal diet and activity",
+          "Instruct parents on return symptoms (fever, pain, vomiting)"
+        ],
+        "cantMiss": [
+          "Delayed bowel obstruction"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-throat",
+    "title": "Throat Infection / Suspected PTA",
+    "version": "2026.1",
+    "chiefComplaints": ["sore throat", "difficulty swallowing", "muffled voice", "trismus", "tonsillitis"],
+    "tags": ["Infection", "Throat", "PTA"],
+    "acuity": "routine",
+    "warning": "Airway protection is paramount. If stridor, drooling, or neck hyperextension (epiglottitis/retrotonsillar spread) is present, prepare for emergent airway.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Airway and Severity Triage",
+        "prompt": "Assess for toxic appearance, drooling, or inability to open mouth (trismus):",
+        "options": [
+          { "label": "Airway compromise / Drooling / Severe Trismus", "next": "airway_urgency" },
+          { "label": "Tonsillar swelling / Sore throat, stable airway", "next": "evaluate_throat" }
+        ]
+      },
+      "evaluate_throat": {
+        "id": "evaluate_throat",
+        "type": "decision",
+        "title": "Abscess vs. Pharyngitis",
+        "prompt": "Examine the tonsils. Is there asymmetric tonsillar swelling, uvular deviation, or localized fluctuance?",
+        "options": [
+          { "label": "Yes (suspected Peritonsillar Abscess)", "next": "pta_workup" },
+          { "label": "No (symmetrical tonsillitis / pharyngitis)", "next": "pharyngitis_workup" }
+        ]
+      },
+      "pharyngitis_workup": {
+        "id": "pharyngitis_workup",
+        "type": "terminal",
+        "title": "Pharyngitis / Strep Management",
+        "prompt": "Obtain Rapid Strep test / Throat Culture. If positive, treat with Penicillin or Amoxicillin PO. Administer single-dose Dexamethasone PO for symptom relief.",
+        "actions": [
+          "Perform Rapid Antigen Detection Test (RADT) for Strep",
+          "If RADT positive, prescribe Amoxicillin 50 mg/kg/day PO (Max 1000 mg) for 10 days",
+          "Consider Dexamethasone 0.6 mg/kg PO (Max 10 mg) x1 dose"
+        ],
+        "cantMiss": [
+          "Acute Rheumatic Fever",
+          "Post-Strep Glomerulonephritis",
+          "Lemierre's Syndrome"
+        ]
+      },
+      "pta_workup": {
+        "id": "pta_workup",
+        "type": "terminal",
+        "title": "Peritonsillar Abscess Management",
+        "prompt": "Consider intraoral ultrasound or neck CT with contrast. Consult ENT for needle aspiration or incision and drainage. Administer IV Clindamycin or Ampicillin-Sulbactam + IV Dexamethasone.",
+        "actions": [
+          "Perform intraoral ultrasound to confirm fluctuance",
+          "ENT consultation for drainage (needle aspiration/I&D)",
+          "Administer IV Ampicillin-Sulbactam 50 mg/kg/dose or IV Clindamycin 13 mg/kg/dose",
+          "Provide IV Dexamethasone 0.6 mg/kg x1"
+        ],
+        "cantMiss": [
+          "Deep Neck Space Infection (Retropharyngeal Abscess)",
+          "Airway Obstruction",
+          "Lemierre's Syndrome (Internal jugular vein thrombosis)"
+        ]
+      },
+      "airway_urgency": {
+        "id": "airway_urgency",
+        "type": "terminal",
+        "title": "Emergent Airway & ENT Mobilization",
+        "prompt": "Keep patient upright and calm. Do not examine throat if epiglottitis is suspected. Mobilize ENT and Anesthesia immediately. Prepare for emergency intubation/tracheostomy.",
+        "actions": [
+          "Keep patient in position of comfort, minimize agitation",
+          "Consult ENT & Anesthesiology immediately for controlled airway placement",
+          "Administer IV Dexamethasone, prepare advanced airway cart"
+        ],
+        "cantMiss": [
+          "Acute Epiglottitis",
+          "Retropharyngeal Abscess",
+          "Ludwig's Angina"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-abuse",
+    "title": "Suspected Physical Abuse",
+    "version": "2026.1",
+    "chiefComplaints": ["abuse", "suspicious injury", "fracture in infant", "burn", "bruising in non-mobile infant"],
+    "tags": ["Child Protection", "Legal", "Abuse"],
+    "acuity": "routine",
+    "warning": "Healthcare providers are mandated reporters. Immediate safety of the child and siblings is the primary ED goal.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Triage & Risk Factors",
+        "prompt": "Evaluate for high-risk indicators: bruise on a non-mobile infant (<6 months), TEN-4-FACES bruising rules, injury mechanism mismatch, delayed presentation, or multiple fractures of different ages:",
+        "options": [
+          { "label": "Bruise in infant < 6 months or highly suspicious fracture/injury", "next": "abuse_protocol" },
+          { "label": "Minor injury with clear, compatible mechanism", "next": "standard_trauma_care" }
+        ]
+      },
+      "abuse_protocol": {
+        "id": "abuse_protocol",
+        "type": "terminal",
+        "title": "Child Protection Protocol",
+        "prompt": "Admit patient for safety. Perform complete skeletal survey (X-ray series). If age < 1 year, perform head CT to screen for abusive head trauma. Report immediately to CPS and Child Protection Team.",
+        "actions": [
+          "File immediate report with Child Protective Services (CPS) / DSS",
+          "Order full skeletal survey (for children < 2 years with suspected abuse)",
+          "Order non-contrast Head CT (if < 1 year old or neurological symptoms)",
+          "Consult social work / Child Protection Team",
+          "Hold/Admit patient for safety; do not discharge until CPS safety plan is established"
+        ],
+        "cantMiss": [
+          "Abusive Head Trauma (Shaken Baby Syndrome / Subdural Hemorrhage)",
+          "Intra-abdominal visceral injury",
+          "Sibling/Household risk (other children at risk)"
+        ]
+      },
+      "standard_trauma_care": {
+        "id": "standard_trauma_care",
+        "type": "terminal",
+        "title": "Standard Pediatric Trauma Management",
+        "prompt": "Treat injuries according to orthopedic or trauma guidelines. Safe to discharge if no suspicion of abuse.",
+        "actions": [
+          "Standard splinting, wound closure, or pain management",
+          "Discharge home with standard outpatient follow-up"
+        ],
+        "cantMiss": [
+          "Compartment syndrome"
+        ]
+      }
+    }
+  }
+]

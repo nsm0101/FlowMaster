@@ -349,7 +349,11 @@ export default function App() {
       'Limp',
       'Abdominal Pain',
       'Vomiting',
-      'Sore Throat'
+      'Sore Throat',
+      'UTI',
+      'Skin Infection',
+      'Ingested Object',
+      'Suspected Abuse'
     ];
 
     return (
