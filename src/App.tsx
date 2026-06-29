@@ -50,7 +50,8 @@ import {
 import { getPathwayById, pathwayRegistry } from './pathways';
 import { createSnapshot, getNode, makeDecisionStep, matchPathways } from './engine/pathwayEngine';
 import { createPatientFlowState } from './engine/patientFlowHandoff';
-import type { DecisionStep, PathwayNode, Pathway, PatientContext } from './types/flowmaster';
+import { quickParse, toPatientContext } from './engine/nlpParser';
+import type { AgeUnit, DecisionStep, PathwayNode, Pathway, PatientContext } from './types/flowmaster';
 
 const initialPatientContext: PatientContext = {
   complaint: '',
@@ -215,6 +216,20 @@ export default function App() {
   // UI state for showing/hiding advanced vitals
   const [showVitals, setShowVitals] = useState(false);
 
+  // NLP quick-parse input
+  const [nlpInput, setNlpInput] = useState('');
+  const [nlpParsed, setNlpParsed] = useState(false);
+
+  // Handle NLP parse — populate patient context from free text
+  const handleNlpParse = () => {
+    const parsed = quickParse(nlpInput);
+    if (parsed) {
+      setPatient(toPatientContext(parsed));
+      setSearchQuery(parsed.complaint);
+      setNlpParsed(true);
+    }
+  };
+
   // Switch pathways cleanly
   const selectPathway = (id: string) => {
     setPathwayId(id);
@@ -345,6 +360,37 @@ export default function App() {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
+          {/* ── NLP Quick Parse Input ── */}
+          <View style={styles.nlpContainer}>
+            <View style={styles.nlpInputRow}>
+              <Sparkles color="#14B8A6" size={16} />
+              <TextInput
+                style={styles.nlpTextInput}
+                placeholder='e.g. "14yo male, RLQ pain x2d, fever 38.5, vomiting"'
+                placeholderTextColor="#64748B"
+                value={nlpInput}
+                onChangeText={setNlpInput}
+                onSubmitEditing={handleNlpParse}
+                returnKeyType="go"
+              />
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={[styles.nlpParseBtn, nlpInput.trim() ? styles.nlpParseBtnActive : null]}
+                onPress={handleNlpParse}
+                disabled={!nlpInput.trim()}
+              >
+                <Text style={[styles.nlpParseBtnText, nlpInput.trim() && styles.nlpParseBtnTextActive]}>Parse</Text>
+              </TouchableOpacity>
+            </View>
+            {nlpParsed && (
+              <View style={styles.nlpParsedBadge}>
+                <CheckCircle size={12} color="#14B8A6" />
+                <Text style={styles.nlpParsedText}>Fields auto-populated from text</Text>
+              </View>
+            )}
+            <Text style={styles.nlpHint}>Type a one-liner or use fields below ↓</Text>
+          </View>
+
           {/* Chief Complaint Input */}
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Chief Complaint / Presentation</Text>
@@ -617,6 +663,20 @@ export default function App() {
     const suggested = suggestedPathwaysList.filter(p => p.score >= 10);
     const others = suggestedPathwaysList.filter(p => p.score < 10);
 
+    const isCriticalCase = 
+      patient.appearance === 'unstable' ||
+      patient.appearance === 'toxic' ||
+      (patient.spo2 !== undefined && patient.spo2 < 92) ||
+      (patient.heartRate !== undefined && (patient.heartRate < 60 || patient.heartRate > 220)) ||
+      patient.complaint.toLowerCase().includes('arrest') ||
+      patient.complaint.toLowerCase().includes('shock') ||
+      patient.complaint.toLowerCase().includes('bradycardia') ||
+      patient.complaint.toLowerCase().includes('tachycardia') ||
+      patient.complaint.toLowerCase().includes('respiratory failure') ||
+      patient.complaint.toLowerCase().includes('apnea') ||
+      patient.complaint.toLowerCase().includes('unconscious') ||
+      patient.complaint.toLowerCase().includes('seizure');
+
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
@@ -625,6 +685,50 @@ export default function App() {
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
+          {/* Critical Care Branch Alert Banner */}
+          {isCriticalCase && (
+            <View style={styles.criticalBranchAlertBox}>
+              <View style={styles.criticalAlertHeader}>
+                <ShieldAlert size={18} color="#F43F5E" />
+                <Text style={styles.criticalAlertTitle}>CRITICAL CARE ALERT (PALS)</Text>
+              </View>
+              <Text style={styles.criticalAlertText}>
+                Patient meets high-acuity critical care criteria. Immediately initiate Pediatric Advanced Life Support (PALS) protocols:
+              </Text>
+              <View style={styles.criticalActionGrid}>
+                {[
+                  { id: 'pals-arrest', label: '1. CPR / Cardiac Arrest' },
+                  { id: 'pals-resp', label: '2. Resp Distress / Failure' },
+                  { id: 'pals-shock', label: '3. Shock Resuscitation' },
+                  { id: 'pals-brady', label: '4. Bradycardia (<60 bpm)' },
+                  { id: 'pals-tachy', label: '5. Tachycardia (Fast HR)' }
+                ].map((cc) => {
+                  const isSelected = pathway.id === cc.id;
+                  return (
+                    <TouchableOpacity
+                      key={cc.id}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.criticalLaunchBtn,
+                        isSelected && styles.criticalLaunchBtnActive
+                      ]}
+                      onPress={() => {
+                        selectPathway(cc.id);
+                        setActiveStep('navigate');
+                      }}
+                    >
+                      <Text style={[
+                        styles.criticalLaunchBtnText,
+                        isSelected && styles.criticalLaunchBtnTextActive
+                      ]}>{cc.label}</Text>
+                      <ChevronRight size={12} color={isSelected ? '#0F172A' : '#EF4444'} />
+                    </TouchableOpacity>
+                  );
+                })}
+              </View>
+            </View>
+          )}
+
           <View style={styles.inputGroup}>
             <Text style={styles.label}>Search Symptoms or Complaints</Text>
             <View style={styles.searchContainer}>
@@ -702,8 +806,8 @@ export default function App() {
               <Text style={styles.previewEyebrow}>SELECTED PATHWAY</Text>
               <Text style={styles.previewTitle}>{pathway.title}</Text>
               <View style={{ flexDirection: 'row', marginVertical: 6, gap: 6 }}>
-                <View style={[styles.miniAcuityBadge, pathway.acuity === 'emergent' ? styles.badgeEmergent : styles.badgeUrgent]}>
-                  <Text style={styles.miniAcuityText}>{pathway.acuity}</Text>
+                <View style={[styles.miniAcuityBadge, pathway.acuity === 'critical' ? styles.badgeCritical : pathway.acuity === 'emergent' ? styles.badgeEmergent : styles.badgeUrgent]}>
+                  <Text style={[styles.miniAcuityText, pathway.acuity === 'critical' && { color: '#F43F5E' }]}>{pathway.acuity}</Text>
                 </View>
                 <Text style={styles.previewVersion}>v{pathway.version}</Text>
               </View>
@@ -1532,6 +1636,65 @@ const styles = StyleSheet.create({
   },
   inputGroup: {
     marginBottom: 14,
+  },
+  // ── NLP Quick Parse ──
+  nlpContainer: {
+    marginBottom: 14,
+    padding: 12,
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  nlpInputRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  nlpTextInput: {
+    flex: 1,
+    fontSize: 13,
+    color: '#F8FAFC',
+    backgroundColor: '#1E293B',
+    borderRadius: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  nlpParseBtn: {
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 8,
+    backgroundColor: '#334155',
+  },
+  nlpParseBtnActive: {
+    backgroundColor: '#14B8A6',
+  },
+  nlpParseBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  nlpParseBtnTextActive: {
+    color: '#0F172A',
+  },
+  nlpParsedBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginTop: 8,
+    gap: 6,
+  },
+  nlpParsedText: {
+    fontSize: 10,
+    fontWeight: '600',
+    color: '#14B8A6',
+  },
+  nlpHint: {
+    fontSize: 10,
+    color: '#475569',
+    marginTop: 8,
+    fontStyle: 'italic',
   },
   label: {
     fontSize: 11,
@@ -2893,5 +3056,62 @@ const styles = StyleSheet.create({
   vitalsAccordionContent: {
     marginTop: 10,
     gap: 8,
+  },
+  // Critical Care Alert styling
+  criticalBranchAlertBox: {
+    backgroundColor: 'rgba(244, 63, 94, 0.08)',
+    borderWidth: 1.5,
+    borderColor: '#F43F5E',
+    borderRadius: 14,
+    padding: 16,
+    marginBottom: 16,
+  },
+  criticalAlertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  criticalAlertTitle: {
+    fontSize: 13,
+    fontWeight: '900',
+    color: '#F43F5E',
+    letterSpacing: 0.5,
+  },
+  criticalAlertText: {
+    fontSize: 12,
+    color: '#E2E8F0',
+    lineHeight: 18,
+    marginBottom: 14,
+  },
+  criticalActionGrid: {
+    gap: 8,
+  },
+  criticalLaunchBtn: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: 'rgba(244, 63, 94, 0.3)',
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  criticalLaunchBtnActive: {
+    backgroundColor: '#F43F5E',
+    borderColor: '#F43F5E',
+  },
+  criticalLaunchBtnText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#F8FAFC',
+  },
+  criticalLaunchBtnTextActive: {
+    color: '#0F172A',
+    fontWeight: '900',
+  },
+  badgeCritical: {
+    backgroundColor: 'rgba(244, 63, 94, 0.15)',
   },
 });

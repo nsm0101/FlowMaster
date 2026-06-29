@@ -1,0 +1,578 @@
+[
+  {
+    "id": "pals-resp",
+    "title": "PALS Respiratory Distress / Failure",
+    "version": "2026.1",
+    "chiefComplaints": ["respiratory distress", "respiratory failure", "difficulty breathing", "apnea", "stridor", "wheezing", "cough"],
+    "tags": ["PALS", "Critical Care", "Airway"],
+    "acuity": "critical",
+    "warning": "Immediate airway and breathing management required. Standby for advanced airway.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Initial Assessment",
+        "prompt": "Initial Management: Open/Support Airway, Suction, Monitor O2, Establish IV/IO",
+        "options": [
+          { "label": "Upper Airway Obstruction", "next": "upper" },
+          { "label": "Lower Airway Obstruction", "next": "lower" },
+          { "label": "Lung Tissue Disease", "next": "lung" },
+          { "label": "CNS Issues", "next": "cns" }
+        ]
+      },
+      "upper": {
+        "id": "upper",
+        "type": "decision",
+        "title": "Upper Airway Obstruction",
+        "prompt": "Determine etiology of upper airway obstruction:",
+        "options": [
+          { "label": "Croup (stridor, barking cough)", "next": "croup" },
+          { "label": "Anaphylaxis (swelling, hives, wheezing)", "next": "anaphylaxis" },
+          { "label": "Foreign Body Ingestion/Inhalation", "next": "foreign_body" }
+        ]
+      },
+      "croup": {
+        "id": "croup",
+        "type": "terminal",
+        "title": "Croup Management",
+        "prompt": "Administer Dexamethasone, Oxygen/Heliox, Nebulized Epinephrine.",
+        "actions": [
+          "Administer Dexamethasone 0.6 mg/kg",
+          "Provide humidified Oxygen / Heliox",
+          "Nebulized Epinephrine if stridor at rest"
+        ]
+      },
+      "anaphylaxis": {
+        "id": "anaphylaxis",
+        "type": "terminal",
+        "title": "Anaphylaxis Management",
+        "prompt": "Administer IM Epinephrine, Albuterol Nebulizer, Diphenhydramine.",
+        "actions": [
+          "IM Epinephrine 0.01 mg/kg immediately",
+          "Albuterol nebulizer for bronchospasm",
+          "IV Diphenhydramine & Corticosteroids"
+        ]
+      },
+      "foreign_body": {
+        "id": "foreign_body",
+        "type": "terminal",
+        "title": "Foreign Body Management",
+        "prompt": "Allow position of comfort, obtain Specialty Consult.",
+        "actions": [
+          "Allow child to assume position of comfort",
+          "Avoid invasive procedures unless airway obstructed",
+          "Consult ENT / Surgery"
+        ]
+      },
+      "lower": {
+        "id": "lower",
+        "type": "decision",
+        "title": "Lower Airway Obstruction",
+        "prompt": "Determine etiology of lower airway obstruction:",
+        "options": [
+          { "label": "Asthma Exacerbation", "next": "asthma" },
+          { "label": "Bronchiolitis", "next": "bronchiolitis" }
+        ]
+      },
+      "asthma": {
+        "id": "asthma",
+        "type": "terminal",
+        "title": "Severe Asthma Management",
+        "prompt": "Provide Albuterol/Ipratropium Nebulizers, Corticosteroids, Mag Sulfate, IM Epinephrine.",
+        "actions": [
+          "Continuous Albuterol + Ipratropium nebulizers",
+          "IV Corticosteroids",
+          "IV Magnesium Sulfate 50-75 mg/kg",
+          "Consider IM Epinephrine if refractory"
+        ]
+      },
+      "bronchiolitis": {
+        "id": "bronchiolitis",
+        "type": "terminal",
+        "title": "Bronchiolitis Management",
+        "prompt": "Suctioning, Nebulizers as trialed.",
+        "actions": [
+          "Deep nasal suctioning",
+          "Trial nebulized hypertonic saline",
+          "Hydration support"
+        ]
+      },
+      "lung": {
+        "id": "lung",
+        "type": "decision",
+        "title": "Lung Tissue Disease",
+        "prompt": "Determine etiology of lung tissue disease:",
+        "options": [
+          { "label": "Pneumonia / Pneumonitis", "next": "pneumonia" },
+          { "label": "Pulmonary Edema / Heart Failure", "next": "pulm_edema" }
+        ]
+      },
+      "pneumonia": {
+        "id": "pneumonia",
+        "type": "terminal",
+        "title": "Pneumonia Management",
+        "prompt": "Administer Antibiotics for bacterial, Albuterol for bronchospasm.",
+        "actions": [
+          "Empiric IV/PO Antibiotics",
+          "Supplemental Oxygen to maintain SpO2 >= 92%",
+          "Albuterol nebulizer if wheezing"
+        ]
+      },
+      "pulm_edema": {
+        "id": "pulm_edema",
+        "type": "terminal",
+        "title": "Pulmonary Edema Management",
+        "prompt": "Inotropes, Diuretics, Support Breathing (CPAP/BiPAP).",
+        "actions": [
+          "Initiate non-invasive positive pressure ventilation (CPAP/BiPAP)",
+          "Administer IV Diuretics (Furosemide)",
+          "Consider Inotropic support (Milrinone/Dopamine)"
+        ]
+      },
+      "cns": {
+        "id": "cns",
+        "type": "decision",
+        "title": "CNS Issues (Decreased Respiratory Drive)",
+        "prompt": "Determine etiology of CNS-related respiratory failure:",
+        "options": [
+          { "label": "Overdose / Toxin Ingestion", "next": "overdose" },
+          { "label": "Trauma / Elevated ICP", "next": "trauma" }
+        ]
+      },
+      "overdose": {
+        "id": "overdose",
+        "type": "terminal",
+        "title": "CNS Overdose Management",
+        "prompt": "Administer Naloxone for opioid reversal, consult Poison Control for specific antidotes.",
+        "actions": [
+          "Administer Naloxone 0.1 mg/kg IV/IO/IM",
+          "Support ventilation via bag-valve-mask",
+          "Contact Poison Control"
+        ]
+      },
+      "trauma": {
+        "id": "trauma",
+        "type": "terminal",
+        "title": "CNS Trauma Management",
+        "prompt": "Reduce intracranial pressure (hyperventilation, hypertonic saline), obtain urgent Neurosurgery consult.",
+        "actions": [
+          "Raise head of bed to 30 degrees",
+          "Administer 3% Hypertonic Saline or Mannitol",
+          "Urgent Head CT scan",
+          "Consult Neurosurgery"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-shock",
+    "title": "PALS Shock Pathway",
+    "version": "2026.1",
+    "chiefComplaints": ["shock", "hypotension", "poor perfusion", "septic shock", "dehydration shock", "hemorrhage", "dehydration"],
+    "tags": ["PALS", "Critical Care", "Fluids"],
+    "acuity": "critical",
+    "warning": "Aggressive fluid resuscitation and perfusion monitoring required.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Initial Resuscitation",
+        "prompt": "Initial: Give O2, Establish IV/IO Access, Monitor Vitals",
+        "options": [
+          { "label": "Hypovolemic or Distributive Shock suspected", "next": "fluid_bolus" },
+          { "label": "Cardiogenic Shock suspected", "next": "cardiogenic" },
+          { "label": "Obstructive Shock suspected", "next": "obstructive" }
+        ]
+      },
+      "fluid_bolus": {
+        "id": "fluid_bolus",
+        "type": "decision",
+        "title": "Fluid Resuscitation",
+        "prompt": "Administer Fluid Bolus: 20 mL/kg Isotonic Crystalloid over 5-10 mins. Classify shock type:",
+        "options": [
+          { "label": "Hypovolemic Shock (dehydration, blood loss)", "next": "hypovolemic" },
+          { "label": "Distributive Shock (septic, anaphylactic, neurogenic)", "next": "distributive" }
+        ]
+      },
+      "hypovolemic": {
+        "id": "hypovolemic",
+        "type": "terminal",
+        "title": "Hypovolemic Shock Management",
+        "prompt": "Continue crystalloid. Use 3:1 ratio for blood loss, consider PRBCs.",
+        "actions": [
+          "Repeat 20 mL/kg crystalloid bolus",
+          "Transfuse PRBCs if hemorrhagic shock",
+          "Trackboard monitoring of urine output"
+        ]
+      },
+      "distributive": {
+        "id": "distributive",
+        "type": "decision",
+        "title": "Distributive Shock Sub-type",
+        "prompt": "Select distributive sub-type diagnosis:",
+        "options": [
+          { "label": "Septic Shock", "next": "septic" },
+          { "label": "Anaphylactic Shock", "next": "anaphylactic_shock" },
+          { "label": "Neurogenic Shock", "next": "neurogenic" }
+        ]
+      },
+      "septic": {
+        "id": "septic",
+        "type": "terminal",
+        "title": "Septic Shock Management",
+        "prompt": "Broad-spectrum Abx, Vasopressors - Dopamine, Norepinephrine, or Epinephrine.",
+        "actions": [
+          "Empiric broad-spectrum antibiotics within 1 hr",
+          "Initiate Norepinephrine (warm shock) or Epinephrine (cold shock)",
+          "Continuous arterial line monitoring"
+        ]
+      },
+      "anaphylactic_shock": {
+        "id": "anaphylactic_shock",
+        "type": "terminal",
+        "title": "Anaphylactic Shock Management",
+        "prompt": "IM Epinephrine, Fluid, Corticosteroids, Antihistamines.",
+        "actions": [
+          "Epinephrine 0.01 mg/kg IM immediately",
+          "Isotonic crystalloid fluid boluses",
+          "IV Methylprednisolone and Famotidine/Diphenhydramine"
+        ]
+      },
+      "neurogenic": {
+        "id": "neurogenic",
+        "type": "terminal",
+        "title": "Neurogenic Shock Management",
+        "prompt": "Fluid, Vasopressors.",
+        "actions": [
+          "Isotonic crystalloid fluid boluses",
+          "Initiate Norepinephrine or Phenylephrine",
+          "Spine immobilization if trauma history"
+        ]
+      },
+      "cardiogenic": {
+        "id": "cardiogenic",
+        "type": "terminal",
+        "title": "Cardiogenic Shock Management",
+        "prompt": "Caution with Fluids: Give 5-10 mL/kg slowly. Use Inotropes, Vasodilators like Milrinone, Expert Consult.",
+        "actions": [
+          "Restrict fluids; 5-10 mL/kg crystalloid bolus slowly over 30 mins",
+          "Start Milrinone infusion",
+          "Urgent Cardiology consult",
+          "Echocardiogram at bedside"
+        ]
+      },
+      "obstructive": {
+        "id": "obstructive",
+        "type": "decision",
+        "title": "Obstructive Shock Sub-type",
+        "prompt": "Rapid Definitive Care based on obstructive etiology:",
+        "options": [
+          { "label": "Tension Pneumothorax", "next": "tension_ptx" },
+          { "label": "Cardiac Tamponade", "next": "tamponade" }
+        ]
+      },
+      "tension_ptx": {
+        "id": "tension_ptx",
+        "type": "terminal",
+        "title": "Tension Pneumothorax Management",
+        "prompt": "Needle Decompression / Tube Thoracostomy.",
+        "actions": [
+          "Emergent needle decompression (2nd ICS MCL)",
+          "Prepare for chest tube insertion",
+          "Supplemental 100% Oxygen"
+        ]
+      },
+      "tamponade": {
+        "id": "tamponade",
+        "type": "terminal",
+        "title": "Cardiac Tamponade Management",
+        "prompt": "Emergency Pericardial Drainage.",
+        "actions": [
+          "Urgent bedside ultrasound",
+          "Perform needle pericardiocentesis",
+          "Consult Cardiothoracic Surgery"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-brady",
+    "title": "PALS Bradycardia with Pulse",
+    "version": "2026.1",
+    "chiefComplaints": ["bradycardia", "slow heart rate", "pulse present"],
+    "tags": ["PALS", "Critical Care", "Bradycardia"],
+    "acuity": "critical",
+    "warning": "Assess cardiopulmonary compromise immediately.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Cardiopulmonary Compromise",
+        "prompt": "Poor Perfusion despite adequate O2 and Ventilation?",
+        "options": [
+          { "label": "Yes (altered mental status, weak pulses, shock)", "next": "check_hr" },
+          { "label": "No (stable perfusion)", "next": "monitor_stable" }
+        ]
+      },
+      "monitor_stable": {
+        "id": "monitor_stable",
+        "type": "terminal",
+        "title": "Observation & Monitoring",
+        "prompt": "Monitor and Observe. Search for underlying causes.",
+        "actions": [
+          "Monitor continuous 12-lead ECG",
+          "Identify and treat hypoxia, hypothermia, drugs",
+          "Consult Pediatric Cardiology"
+        ]
+      },
+      "check_hr": {
+        "id": "check_hr",
+        "type": "decision",
+        "title": "Heart Rate Check",
+        "prompt": "Is HR < 60 bpm?",
+        "options": [
+          { "label": "Yes (HR < 60 bpm)", "next": "cpr" },
+          { "label": "No (HR >= 60 bpm)", "next": "monitor_stable" }
+        ]
+      },
+      "cpr": {
+        "id": "cpr",
+        "type": "checkpoint",
+        "title": "Start CPR",
+        "prompt": "Start CPR. Administer oxygen, establish airway. Does Bradycardia Persist?",
+        "options": [
+          { "label": "Yes (persistently slow HR)", "next": "epi" },
+          { "label": "No (heart rate recovered)", "next": "post_resusc" }
+        ]
+      },
+      "epi": {
+        "id": "epi",
+        "type": "terminal",
+        "title": "Bradycardia Pharmacology",
+        "prompt": "Administer Epinephrine: 0.01 mg/kg IV/IO every 3-5 min. Consider Atropine (0.02 mg/kg) for increased vagal tone or primary AV block. Consider Transthoracic or Transvenous Pacing.",
+        "actions": [
+          "Epinephrine 0.01 mg/kg IV/IO every 3-5 mins",
+          "Atropine 0.02 mg/kg IV/IO if vagal tone high",
+          "Prepare transthoracic pacing pads"
+        ]
+      },
+      "post_resusc": {
+        "id": "post_resusc",
+        "type": "terminal",
+        "title": "Post-Resuscitation Monitoring",
+        "prompt": "Return to normal parameters: Monitor vitals, check electrolytes, obtain 12-lead ECG.",
+        "actions": [
+          "12-lead ECG",
+          "Check ionized Calcium, Potassium, Magnesium",
+          "Continuous vital sign monitoring"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-tachy",
+    "title": "PALS Tachycardia with Pulse",
+    "version": "2026.1",
+    "chiefComplaints": ["tachycardia", "fast heart rate", "palpitations"],
+    "tags": ["PALS", "Critical Care", "Tachycardia"],
+    "acuity": "critical",
+    "warning": "Evaluate QRS duration immediately.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "QRS Evaluation",
+        "prompt": "Evaluate QRS Duration on ECG:",
+        "options": [
+          { "label": "Narrow QRS (<= 0.09s)", "next": "narrow" },
+          { "label": "Wide QRS (> 0.09s)", "next": "wide" }
+        ]
+      },
+      "narrow": {
+        "id": "narrow",
+        "type": "decision",
+        "title": "Narrow QRS Rhythm",
+        "prompt": "Evaluate Rhythm characteristics:",
+        "options": [
+          { "label": "Probable Sinus Tachycardia (Variable R-R, P waves present, HR <180/220)", "next": "sinus_tachy" },
+          { "label": "Probable SVT (Constant R-R, absent P waves, HR >180/220)", "next": "svt" }
+        ]
+      },
+      "sinus_tachy": {
+        "id": "sinus_tachy",
+        "type": "terminal",
+        "title": "Sinus Tachycardia Management",
+        "prompt": "Search for and treat underlying cause (fever, pain, dehydration, anemia).",
+        "actions": [
+          "Treat fever (Antipyretics)",
+          "Provide fluid hydration bolus (20 mL/kg)",
+          "Treat pain"
+        ]
+      },
+      "svt": {
+        "id": "svt",
+        "type": "decision",
+        "title": "SVT Stability Check",
+        "prompt": "Is the patient stable (adequate perfusion, no shock)?",
+        "options": [
+          { "label": "Yes (Stable)", "next": "svt_stable" },
+          { "label": "No (Unstable)", "next": "svt_unstable" }
+        ]
+      },
+      "svt_stable": {
+        "id": "svt_stable",
+        "type": "terminal",
+        "title": "SVT Stable Management",
+        "prompt": "Attempt Vagal Maneuvers or Adenosine 0.1 mg/kg IV/IO rapid bolus.",
+        "actions": [
+          "Attempt vagal maneuvers (ice bag to face or Valsalva)",
+          "Adenosine 0.1 mg/kg IV/IO rapid flush (Max 6 mg)",
+          "Second dose Adenosine 0.2 mg/kg if needed (Max 12 mg)",
+          "12-lead ECG continuous recording"
+        ]
+      },
+      "svt_unstable": {
+        "id": "svt_unstable",
+        "type": "terminal",
+        "title": "SVT Unstable Cardioversion",
+        "prompt": "Unstable: Synchronized Cardioversion 0.5 to 1 J/kg.",
+        "actions": [
+          "Synchronized Cardioversion 0.5 - 1.0 J/kg",
+          "If unsuccessful, increase to 2.0 J/kg",
+          "Consider sedation prior to shock if awake",
+          "Obtain IV/IO access and consider Adenosine first if quick"
+        ]
+      },
+      "wide": {
+        "id": "wide",
+        "type": "decision",
+        "title": "Wide QRS: Ventricular Tachycardia",
+        "prompt": "Evaluate VT for Cardiopulmonary Compromise:",
+        "options": [
+          { "label": "Yes (Unstable VT)", "next": "vt_unstable" },
+          { "label": "No (Stable VT)", "next": "vt_stable" }
+        ]
+      },
+      "vt_unstable": {
+        "id": "vt_unstable",
+        "type": "terminal",
+        "title": "VT Unstable Management",
+        "prompt": "Unstable: Synchronized Cardioversion 0.5 to 1 J/kg.",
+        "actions": [
+          "Synchronized Cardioversion 0.5 - 1.0 J/kg",
+          "Increase to 2.0 J/kg if refractory",
+          "Bedside crash cart standby"
+        ]
+      },
+      "vt_stable": {
+        "id": "vt_stable",
+        "type": "terminal",
+        "title": "VT Stable Management",
+        "prompt": "Stable: Consider Adenosine if rhythm is regular and monomorphic. Obtain Specialist Consult for Amiodarone (5 mg/kg IV over 20-60m) or Procainamide (15 mg/kg IV over 30-60m).",
+        "actions": [
+          "Adenosine 0.1 mg/kg IV/IO if monomorphic/regular",
+          "Amiodarone 5 mg/kg IV infusion over 20-60 minutes",
+          "Consult Pediatric Cardiology / ICU"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-arrest",
+    "title": "PALS Cardiac Arrest",
+    "version": "2026.1",
+    "chiefComplaints": ["cardiac arrest", "no pulse", "asystole", "pulseless vt", "ventricular fibrillation"],
+    "tags": ["PALS", "Critical Care", "Resuscitation"],
+    "acuity": "critical",
+    "warning": "CRITICAL LIFE THREAT. Begin high-quality CPR immediately.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "CPR Initiation",
+        "prompt": "Start High-Quality CPR, Give O2, Attach Monitor/Defibrillator. Is Rhythm Shockable?",
+        "options": [
+          { "label": "Yes (VF / pulseless VT)", "next": "shockable" },
+          { "label": "No (Asystole / PEA)", "next": "unshockable" }
+        ]
+      },
+      "shockable": {
+        "id": "shockable",
+        "type": "checkpoint",
+        "title": "VF / pVT Shock 1",
+        "prompt": "Administer Shock: 2 J/kg. Perform CPR for 2 Minutes + Obtain IV/IO Access. Check Rhythm. Shockable?",
+        "options": [
+          { "label": "Yes (Rhythm is shockable)", "next": "shock2" },
+          { "label": "No (Rhythm is non-shockable or ROSC)", "next": "check_rosc" }
+        ]
+      },
+      "shock2": {
+        "id": "shock2",
+        "type": "checkpoint",
+        "title": "VF / pVT Shock 2",
+        "prompt": "Administer Shock: 4 J/kg. Perform CPR for 2 Minutes + Epinephrine 0.01 mg/kg every 3-5 min + Advanced Airway. Check Rhythm. Shockable?",
+        "options": [
+          { "label": "Yes (Rhythm is shockable)", "next": "shock3" },
+          { "label": "No (Rhythm is non-shockable or ROSC)", "next": "check_rosc" }
+        ]
+      },
+      "shock3": {
+        "id": "shock3",
+        "type": "checkpoint",
+        "title": "VF / pVT Shock 3",
+        "prompt": "Administer Shock: >= 4 J/kg (Max 10 J/kg or adult dose). Perform CPR for 2 Minutes + Amiodarone 5 mg/kg OR Lidocaine 1 mg/kg. Check Rhythm. Shockable?",
+        "options": [
+          { "label": "Yes (Rhythm remains shockable)", "next": "shock2" },
+          { "label": "No (Rhythm is non-shockable or ROSC)", "next": "check_rosc" }
+        ]
+      },
+      "unshockable": {
+        "id": "unshockable",
+        "type": "checkpoint",
+        "title": "Asystole / PEA",
+        "prompt": "Perform CPR for 2 Minutes + Obtain IV/IO Access + Advanced Airway. Administer Epinephrine 0.01 mg/kg every 3-5 min. Check Rhythm. Shockable?",
+        "options": [
+          { "label": "Yes (VF/pVT developed)", "next": "shockable" },
+          { "label": "No (Rhythm remains non-shockable)", "next": "treat_causes" }
+        ]
+      },
+      "treat_causes": {
+        "id": "treat_causes",
+        "type": "checkpoint",
+        "title": "Reversible Causes (H's and T's)",
+        "prompt": "Treat Reversible Causes: Hypovolemia, Hypoxia, Hydrogen ion (acidosis), Hypo/Hyperkalemia, Hypothermia. Tension Pneumothorax, Tamponade (cardiac), Toxins, Thrombosis. Check Rhythm. Shockable?",
+        "options": [
+          { "label": "Yes (VF/pVT developed)", "next": "shockable" },
+          { "label": "No (Asystole/PEA persists)", "next": "unshockable" }
+        ]
+      },
+      "check_rosc": {
+        "id": "check_rosc",
+        "type": "decision",
+        "title": "ROSC Assessment",
+        "prompt": "Evaluate for Return of Spontaneous Circulation (ROSC) - pulse, organized rhythm, sudden rise in PetCO2:",
+        "options": [
+          { "label": "ROSC Achieved (pulse present)", "next": "post_resusc_care" },
+          { "label": "No ROSC (Asystole/PEA persists)", "next": "unshockable" }
+        ]
+      },
+      "post_resusc_care": {
+        "id": "post_resusc_care",
+        "type": "terminal",
+        "title": "Post-Cardiac Arrest Care",
+        "prompt": "ROSC obtained. Support ventilation, oxygenation. Target normoxia, avoid hyperoxia. Check blood pressure, manage fluids/inotropes, targeted temperature management.",
+        "actions": [
+          "Post-ROSC arterial blood gas",
+          "Initiate targeted temperature management",
+          "Obtain portable Chest X-ray",
+          "Consult Pediatric Intensive Care"
+        ]
+      }
+    }
+  }
+]
