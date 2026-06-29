@@ -1,4 +1,4 @@
-export type AgeUnit = 'days' | 'months' | 'years';
+export type AgeUnit = 'days' | 'weeks' | 'months' | 'years';
 export type Appearance = 'well' | 'ill' | 'toxic' | 'unstable';
 export type Acuity = 'routine' | 'urgent' | 'emergent' | 'critical';
 export type NodeType = 'decision' | 'checkpoint' | 'result' | 'disposition' | 'terminal';
@@ -156,6 +156,7 @@ export type PatientContext = {
   complaint: string;
   age: number;
   unit: AgeUnit;
+  gender: 'male' | 'female' | 'other';
   weightKg?: number;
   appearance: Appearance;
   temperatureC?: number;

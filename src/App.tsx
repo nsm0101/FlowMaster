@@ -56,6 +56,7 @@ const initialPatientContext: PatientContext = {
   complaint: '',
   age: 1,
   unit: 'years',
+  gender: 'male',
   appearance: 'well',
   weightKg: undefined,
   spo2: undefined,
@@ -69,6 +70,7 @@ const initialPatientContext: PatientContext = {
 const getNormalVitalsRange = (age: number, unit: AgeUnit) => {
   let years = age;
   if (unit === 'months') years = age / 12;
+  if (unit === 'weeks') years = age / 52;
   if (unit === 'days') years = age / 365;
 
   if (years <= 0.08) { // < 1 month
@@ -262,9 +264,9 @@ export default function App() {
   // 1. Unified Stepper UI
   const renderStepper = () => {
     const steps = [
-      { key: 'profile', label: '1. Patient Profile', icon: User },
-      { key: 'navigate', label: '2. Guided Navigator', icon: Compass },
-      { key: 'recommendations', label: '3. Care Plan & Handoff', icon: FileText }
+      { key: 'profile', label: '1. Presentation & Triage', icon: User },
+      { key: 'navigate', label: '2. ED Evaluation & Decision', icon: Compass },
+      { key: 'recommendations', label: '3. Treatment & Disposition', icon: FileText }
     ] as const;
 
     return (
@@ -324,97 +326,173 @@ export default function App() {
     const rrStatus = patient.respiratoryRate !== undefined ? getVitalStatus('rr', patient.respiratoryRate, patient.age, patient.unit) : null;
     const normalVitals = getNormalVitalsRange(patient.age, patient.unit);
 
+    const quickComplaints = [
+      'Fever',
+      'Cough',
+      'Seizure',
+      'Head Trauma',
+      'Limp',
+      'Abdominal Pain',
+      'Vomiting',
+      'Sore Throat'
+    ];
+
     return (
       <View style={styles.card}>
         <View style={styles.cardHeader}>
           <User color="#14B8A6" size={18} />
-          <Text style={styles.cardTitle}>Patient Characteristics</Text>
+          <Text style={styles.cardTitle}>Rapid Presentation Entry</Text>
         </View>
 
         <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
-          <Text style={styles.wizardSectionTitle}>Demographics & Appearance</Text>
-          
-          <View style={styles.row}>
-            <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
-              <Text style={styles.label}>Age Value</Text>
-              <TextInput
-                style={styles.textInput}
-                keyboardType="numeric"
-                value={patient.age.toString()}
-                onChangeText={(val) => setPatient(prev => ({ ...prev, age: Number(val) || 0 }))}
-              />
+          {/* Chief Complaint Input */}
+          <View style={styles.inputGroup}>
+            <Text style={styles.label}>Chief Complaint / Presentation</Text>
+            <TextInput
+              style={styles.textInput}
+              placeholder="e.g. fever, head trauma, limp..."
+              placeholderTextColor="#475569"
+              value={patient.complaint}
+              onChangeText={(val) => {
+                setPatient(prev => ({ ...prev, complaint: val }));
+                setSearchQuery(val);
+              }}
+            />
+            {/* Quick Complaint Tags */}
+            <View style={styles.quickTagsContainer}>
+              {quickComplaints.map((complaint) => (
+                <TouchableOpacity
+                  key={complaint}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.quickTagBtn,
+                    patient.complaint.toLowerCase() === complaint.toLowerCase() && styles.quickTagBtnActive
+                  ]}
+                  onPress={() => {
+                    setPatient(prev => ({ ...prev, complaint }));
+                    setSearchQuery(complaint);
+                  }}
+                >
+                  <Text style={[
+                    styles.quickTagBtnText,
+                    patient.complaint.toLowerCase() === complaint.toLowerCase() && styles.quickTagBtnTextActive
+                  ]}>{complaint}</Text>
+                </TouchableOpacity>
+              ))}
             </View>
+          </View>
+
+          {/* Age & Gender side-by-side */}
+          <View style={styles.row}>
+            {/* Age Value & Unit */}
+            <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+              <Text style={styles.label}>Age</Text>
+              <View style={{ flexDirection: 'row', alignItems: 'center' }}>
+                <TextInput
+                  style={[styles.textInput, { flex: 1, borderTopRightRadius: 0, borderBottomRightRadius: 0 }]}
+                  keyboardType="numeric"
+                  value={patient.age.toString()}
+                  onChangeText={(val) => setPatient(prev => ({ ...prev, age: Number(val) || 0 }))}
+                />
+                <View style={styles.ageUnitSelectContainer}>
+                  {(['days', 'weeks', 'months', 'years'] as const).map((unit) => (
+                    <TouchableOpacity
+                      key={unit}
+                      activeOpacity={0.7}
+                      style={[
+                        styles.ageUnitMiniBtn,
+                        patient.unit === unit && styles.ageUnitMiniBtnActive
+                      ]}
+                      onPress={() => setPatient(prev => ({ ...prev, unit }))}
+                    >
+                      <Text style={[
+                        styles.ageUnitMiniBtnText,
+                        patient.unit === unit && styles.ageUnitMiniBtnTextActive
+                      ]}>
+                        {unit === 'days' ? 'D' : unit === 'weeks' ? 'W' : unit === 'months' ? 'M' : 'Y'}
+                      </Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            </View>
+
+            {/* Gender Selection */}
             <View style={[styles.inputGroup, { flex: 1 }]}>
-              <Text style={styles.label}>Age Unit</Text>
+              <Text style={styles.label}>Gender</Text>
               <View style={styles.pickerRow}>
-                {(['days', 'months', 'years'] as const).map((unit) => (
+                {(['male', 'female', 'other'] as const).map((gender) => (
                   <TouchableOpacity
-                    key={unit}
+                    key={gender}
                     activeOpacity={0.7}
                     style={[
                       styles.pickerBtn,
-                      patient.unit === unit && styles.pickerBtnActive,
+                      patient.gender === gender && styles.pickerBtnActive,
                       { paddingVertical: 8 }
                     ]}
-                    onPress={() => setPatient(prev => ({ ...prev, unit }))}
+                    onPress={() => setPatient(prev => ({ ...prev, gender }))}
                   >
                     <Text style={[
                       styles.pickerBtnText,
-                      patient.unit === unit && styles.pickerBtnTextActive
-                    ]}>{unit}</Text>
+                      patient.gender === gender && styles.pickerBtnTextActive,
+                      { textTransform: 'capitalize' }
+                    ]}>{gender}</Text>
                   </TouchableOpacity>
                 ))}
               </View>
             </View>
           </View>
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Clinical Appearance</Text>
-            <Text style={styles.inputHint}>Subjective clinician assessment of acuity:</Text>
-            <View style={styles.pickerGrid}>
-              {(['well', 'ill', 'toxic', 'unstable'] as const).map((appearance) => {
-                const isActive = patient.appearance === appearance;
-                return (
-                  <TouchableOpacity
-                    key={appearance}
-                    activeOpacity={0.7}
-                    style={[
-                      styles.pickerBtn,
-                      styles.pickerGridBtn,
-                      isActive && appearance === 'well' && styles.pickerBtnWellActive,
-                      isActive && appearance === 'ill' && styles.pickerBtnIllActive,
-                      isActive && appearance === 'toxic' && styles.pickerBtnToxicActive,
-                      isActive && appearance === 'unstable' && styles.pickerBtnUnstableActive,
-                    ]}
-                    onPress={() => setPatient(prev => ({ ...prev, appearance }))}
-                  >
-                    <Text style={[
-                      styles.pickerBtnText,
-                      isActive && styles.pickerBtnTextActiveWhite
-                    ]}>{appearance}</Text>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
-          </View>
-
           <View style={styles.divider} />
 
-          <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <Text style={styles.wizardSectionTitle}>Vital Signs & Measurements</Text>
-            <TouchableOpacity
-              activeOpacity={0.7}
-              onPress={() => setShowVitals(!showVitals)}
-              style={styles.vitalsToggleCompact}
-            >
-              <Text style={styles.vitalsToggleCompactText}>
-                {showVitals ? 'Hide Vitals' : 'Show Vitals'}
-              </Text>
-            </TouchableOpacity>
-          </View>
+          {/* Optional Vitals Expandable Accordion */}
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={styles.vitalsAccordionHeader}
+            onPress={() => setShowVitals(!showVitals)}
+          >
+            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6 }}>
+              <Activity size={15} color="#14B8A6" />
+              <Text style={styles.vitalsAccordionHeaderText}>Clinical Adjuncts & Vitals (Optional)</Text>
+            </View>
+            <ChevronRight 
+              size={16} 
+              color="#94A3B8" 
+              style={{ transform: [{ rotate: showVitals ? '90deg' : '0deg' }] }} 
+            />
+          </TouchableOpacity>
 
-          {showVitals ? (
-            <View style={styles.vitalsBlock}>
+          {showVitals && (
+            <View style={styles.vitalsAccordionContent}>
+              <View style={[styles.inputGroup, { marginTop: 10 }]}>
+                <Text style={styles.label}>Clinical Appearance</Text>
+                <View style={styles.pickerGrid}>
+                  {(['well', 'ill', 'toxic', 'unstable'] as const).map((appearance) => {
+                    const isActive = patient.appearance === appearance;
+                    return (
+                      <TouchableOpacity
+                        key={appearance}
+                        activeOpacity={0.7}
+                        style={[
+                          styles.pickerBtn,
+                          styles.pickerGridBtn,
+                          isActive && appearance === 'well' && styles.pickerBtnWellActive,
+                          isActive && appearance === 'ill' && styles.pickerBtnIllActive,
+                          isActive && appearance === 'toxic' && styles.pickerBtnToxicActive,
+                          isActive && appearance === 'unstable' && styles.pickerBtnUnstableActive,
+                        ]}
+                        onPress={() => setPatient(prev => ({ ...prev, appearance }))}
+                      >
+                        <Text style={[
+                          styles.pickerBtnText,
+                          isActive && styles.pickerBtnTextActiveWhite
+                        ]}>{appearance}</Text>
+                      </TouchableOpacity>
+                    );
+                  })}
+                </View>
+              </View>
+
               <View style={styles.row}>
                 {/* Temp */}
                 <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
@@ -513,30 +591,21 @@ export default function App() {
                   />
                 </View>
               </View>
-            </View>
-          ) : (
-            <TouchableOpacity 
-              activeOpacity={0.7}
-              onPress={() => setShowVitals(true)}
-              style={styles.vitalsPromoBox}
-            >
-              <Activity size={18} color="#94A3B8" />
-              <Text style={styles.vitalsPromoText}>Click to add vital signs (HR, RR, SpO2, Temp) to trigger automatic algorithm matching.</Text>
-            </TouchableOpacity>
-          )}
 
-          <View style={styles.inputGroup}>
-            <Text style={styles.label}>Clinical Presentation Notes</Text>
-            <TextInput
-              style={[styles.textInput, styles.textArea]}
-              multiline
-              numberOfLines={3}
-              placeholder="Enter brief presentation details or secondary symptoms..."
-              placeholderTextColor="#475569"
-              value={patient.notes}
-              onChangeText={(val) => setPatient(prev => ({ ...prev, notes: val }))}
-            />
-          </View>
+              <View style={styles.inputGroup}>
+                <Text style={styles.label}>Clinical Notes</Text>
+                <TextInput
+                  style={[styles.textInput, styles.textArea]}
+                  multiline
+                  numberOfLines={2}
+                  placeholder="Enter additional findings..."
+                  placeholderTextColor="#475569"
+                  value={patient.notes}
+                  onChangeText={(val) => setPatient(prev => ({ ...prev, notes: val }))}
+                />
+              </View>
+            </View>
+          )}
         </ScrollView>
       </View>
     );
@@ -2743,5 +2812,86 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '700',
     color: '#0F172A',
+  },
+  // Streamlined Presentation Entry styles
+  quickTagsContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+    marginTop: 8,
+  },
+  quickTagBtn: {
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 8,
+  },
+  quickTagBtnActive: {
+    backgroundColor: 'rgba(20, 184, 166, 0.15)',
+    borderColor: '#14B8A6',
+  },
+  quickTagBtnText: {
+    fontSize: 11,
+    color: '#94A3B8',
+    fontWeight: '600',
+  },
+  quickTagBtnTextActive: {
+    color: '#14B8A6',
+    fontWeight: '700',
+  },
+  ageUnitSelectContainer: {
+    flexDirection: 'row',
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderLeftWidth: 0,
+    borderColor: '#334155',
+    borderTopRightRadius: 10,
+    borderBottomRightRadius: 10,
+    padding: 2,
+    height: 40,
+    alignItems: 'center',
+  },
+  ageUnitMiniBtn: {
+    paddingHorizontal: 8,
+    height: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+    borderRadius: 6,
+  },
+  ageUnitMiniBtnActive: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  ageUnitMiniBtnText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#64748B',
+  },
+  ageUnitMiniBtnTextActive: {
+    color: '#14B8A6',
+  },
+  vitalsAccordionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 12,
+    marginTop: 6,
+  },
+  vitalsAccordionHeaderText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#F8FAFC',
+  },
+  vitalsAccordionContent: {
+    marginTop: 10,
+    gap: 8,
   },
 });

@@ -2,13 +2,20 @@ import type { DecisionStep, EngineSnapshot, Pathway, PathwayNode, PatientContext
 
 export const getAgeInDays = (patient: PatientContext) => {
   if (patient.unit === 'days') return patient.age;
+  if (patient.unit === 'weeks') return patient.age * 7;
   if (patient.unit === 'months') return patient.age * 30.4;
   return patient.age * 365;
 };
 
 export const getAgeBand = (patient: PatientContext) => {
   const days = getAgeInDays(patient);
-  const months = patient.unit === 'years' ? patient.age * 12 : patient.unit === 'months' ? patient.age : patient.age / 30.4;
+  const months = patient.unit === 'years'
+    ? patient.age * 12
+    : patient.unit === 'months'
+      ? patient.age
+      : patient.unit === 'weeks'
+        ? (patient.age * 7) / 30.4
+        : patient.age / 30.4;
   if (days <= 28) return '0–28 days';
   if (days <= 60) return '29–60 days';
   if (days <= 90) return '61–90 days';

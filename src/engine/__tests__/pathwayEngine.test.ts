@@ -13,6 +13,7 @@ const patient = (age: number, unit: PatientContext['unit']): PatientContext => (
   complaint: 'fever',
   age,
   unit,
+  gender: 'male',
   appearance: 'well',
   notes: ''
 });
