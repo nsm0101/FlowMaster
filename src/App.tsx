@@ -672,6 +672,7 @@ export default function App() {
       patient.appearance === 'toxic' ||
       (patient.spo2 !== undefined && patient.spo2 < 92) ||
       (patient.heartRate !== undefined && (patient.heartRate < 60 || patient.heartRate > 220)) ||
+      (patient.temperatureC !== undefined && patient.temperatureC >= 38.0 && patient.age <= 28 && patient.unit === 'days') ||
       patient.complaint.toLowerCase().includes('arrest') ||
       patient.complaint.toLowerCase().includes('shock') ||
       patient.complaint.toLowerCase().includes('bradycardia') ||
@@ -679,7 +680,11 @@ export default function App() {
       patient.complaint.toLowerCase().includes('respiratory failure') ||
       patient.complaint.toLowerCase().includes('apnea') ||
       patient.complaint.toLowerCase().includes('unconscious') ||
-      patient.complaint.toLowerCase().includes('seizure');
+      patient.complaint.toLowerCase().includes('seizure') ||
+      patient.complaint.toLowerCase().includes('sepsis') ||
+      patient.complaint.toLowerCase().includes('dka') ||
+      patient.complaint.toLowerCase().includes('diabetic') ||
+      patient.complaint.toLowerCase().includes('sickle cell');
 
     return (
       <View style={styles.card}>
@@ -697,7 +702,7 @@ export default function App() {
                 <Text style={styles.criticalAlertTitle}>CRITICAL CARE ALERT (PALS)</Text>
               </View>
               <Text style={styles.criticalAlertText}>
-                Patient meets high-acuity critical care criteria. Immediately initiate Pediatric Advanced Life Support (PALS) protocols:
+                Patient meets high-acuity critical care criteria. Immediately initiate Pediatric Advanced Life Support (PALS) or emergency protocols:
               </Text>
               <View style={styles.criticalActionGrid}>
                 {[
@@ -705,7 +710,12 @@ export default function App() {
                   { id: 'pals-resp', label: '2. Resp Distress / Failure' },
                   { id: 'pals-shock', label: '3. Shock Resuscitation' },
                   { id: 'pals-brady', label: '4. Bradycardia (<60 bpm)' },
-                  { id: 'pals-tachy', label: '5. Tachycardia (Fast HR)' }
+                  { id: 'pals-tachy', label: '5. Tachycardia (Fast HR)' },
+                  { id: 'pals-febrile-infant', label: '6. Febrile Infant (≤56 days)' },
+                  { id: 'pals-sepsis', label: '7. ED Sepsis & Septic Shock' },
+                  { id: 'pals-status', label: '8. Status Epilepticus (Active)' },
+                  { id: 'pals-dka', label: '9. Diabetic Ketoacidosis (DKA)' },
+                  { id: 'pals-scd-fever', label: '10. Sickle Cell with Fever' }
                 ].map((cc) => {
                   const isSelected = pathway.id === cc.id;
                   return (

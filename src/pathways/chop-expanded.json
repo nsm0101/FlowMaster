@@ -1,0 +1,385 @@
+[
+  {
+    "id": "pals-febrile-infant",
+    "title": "Febrile Infant (≤ 56 Days Old)",
+    "version": "2026.1",
+    "chiefComplaints": ["fever", "neonatal fever", "febrile infant", "warm to touch"],
+    "tags": ["Infection", "Fever", "Neonatal"],
+    "acuity": "critical",
+    "warning": "Neonatal fever in infants ≤ 28 days is a medical emergency. Do not delay IV antibiotics.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Age-Based Risk Stratification",
+        "prompt": "Identify patient's exact age in days:",
+        "options": [
+          { "label": "Age ≤ 21 days", "next": "age_21" },
+          { "label": "Age 22 to 28 days", "next": "age_22_28" },
+          { "label": "Age 29 to 56 days", "next": "age_29_56" }
+        ]
+      },
+      "age_21": {
+        "id": "age_21",
+        "type": "terminal",
+        "title": "Full Sepsis Workup & Admission",
+        "prompt": "Perform full sepsis workup including blood culture, urine culture via catheter, lumbar puncture (CSF culture/gram stain/PCR), and inflammatory markers (CRP/Procalcitonin). Admit for IV Ampicillin + Ceftazidime (or Gentamicin) immediately.",
+        "actions": [
+          "Obtain blood culture & CBC",
+          "Obtain catheterized urine culture & UA",
+          "Perform Lumbar Puncture (LP) for CSF analysis",
+          "Initiate IV Ampicillin 50 mg/kg + IV Ceftazidime 50 mg/kg (or Gentamicin 2.5 mg/kg)",
+          "Admit to inpatient ward / NICU"
+        ],
+        "cantMiss": [
+          "Neonatal Meningitis",
+          "HSV Encephalitis",
+          "Urosepsis"
+        ]
+      },
+      "age_22_28": {
+        "id": "age_22_28",
+        "type": "decision",
+        "title": "Inflammatory Marker Risk Stratification",
+        "prompt": "Obtain CBC, blood culture, catheter urine UA/culture, and inflammatory markers (Procalcitonin, CRP, ANC). Are ALL inflammatory markers and urine UA completely normal?",
+        "options": [
+          { "label": "All normal (low risk)", "next": "age_22_28_low" },
+          { "label": "Any abnormal / Positive UA", "next": "full_sepsis_workup" }
+        ]
+      },
+      "age_22_28_low": {
+        "id": "age_22_28_low",
+        "type": "terminal",
+        "title": "Admission & Close Observation",
+        "prompt": "Lumbar puncture is optional. Admit for observation and track blood/urine cultures. IV antibiotics may be deferred if CSF not obtained.",
+        "actions": [
+          "Admit for observation and culture monitoring",
+          "Obtain IV access",
+          "Decline or defer lumbar puncture if family/clinician agree"
+        ],
+        "cantMiss": [
+          "Late-onset GBS sepsis",
+          "Occult UTI"
+        ]
+      },
+      "full_sepsis_workup": {
+        "id": "full_sepsis_workup",
+        "type": "terminal",
+        "title": "Escalated Workup & IV Antibiotics",
+        "prompt": "Perform Lumbar Puncture (LP) for CSF. Administer empiric IV Ceftriaxone (or Ampicillin + Ceftazidime) and admit.",
+        "actions": [
+          "Perform Lumbar Puncture",
+          "Administer IV Ceftriaxone 50 mg/kg (or Amp/Ceftaz)",
+          "Inpatient admission"
+        ],
+        "cantMiss": [
+          "Bacterial Meningitis",
+          "Sepsis"
+        ]
+      },
+      "age_29_56": {
+        "id": "age_29_56",
+        "type": "decision",
+        "title": "Low-Risk Protocol Criteria",
+        "prompt": "Is the infant well-appearing, normal UA, ANC < 4000, CRP < 20, Procalcitonin < 0.5?",
+        "options": [
+          { "label": "Yes (meets low-risk criteria)", "next": "home_discharge" },
+          { "label": "No (abnormal labs/ill-appearing)", "next": "full_sepsis_workup" }
+        ]
+      },
+      "home_discharge": {
+        "id": "home_discharge",
+        "type": "terminal",
+        "title": "Safe Discharge with 24h Follow-up",
+        "prompt": "May discharge home without antibiotics. Ensure family is reliable, has transportation, and is scheduled for clinical recheck/pediatrician visit within 24 hours.",
+        "actions": [
+          "Counsel family on strict return criteria",
+          "Schedule 24-hour outpatient follow-up",
+          "Monitor pending cultures"
+        ],
+        "cantMiss": [
+          "Early decompensated infection",
+          "Inadequate parental follow-up"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-sepsis",
+    "title": "ED Sepsis & Septic Shock",
+    "version": "2026.1",
+    "chiefComplaints": ["sepsis", "septic shock", "high fever", "toxic appearance", "poor perfusion", "hypotension", "lethargy"],
+    "tags": ["PALS", "Critical Care", "Infection"],
+    "acuity": "critical",
+    "warning": "Sepsis recognition is time-critical. Initiate treatment bundle within 60 minutes for severe shock.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Shock Classification",
+        "prompt": "Evaluate for signs of shock (prolonged capillary refill >2s, cold extremities, altered mental status, weak pulses, or hypotension):",
+        "options": [
+          { "label": "Red Zone (Decompensated Shock / Hypotension)", "next": "red_zone" },
+          { "label": "Yellow Zone (Compensated Shock / Tachycardia & Normal BP)", "next": "yellow_zone" },
+          { "label": "Green Zone (Febrile, Stable Hemodynamics)", "next": "green_zone" }
+        ]
+      },
+      "red_zone": {
+        "id": "red_zone",
+        "type": "terminal",
+        "title": "Aggressive Resuscitation (Red Zone)",
+        "prompt": "Secure IV/IO access within 5 minutes. Administer 20 mL/kg Isotonic Crystalloid bolus over 5-10 minutes. Draw blood culture and CBC. Give empiric broad-spectrum antibiotics (Ceftriaxone + Vancomycin) within 60 minutes. Initiate vasoactive drugs (Norepinephrine or Epinephrine) if shock persists after 40-60 mL/kg fluids.",
+        "actions": [
+          "Secure IV/IO access immediately",
+          "Administer 20 mL/kg Normal Saline or Lactated Ringer's bolus over 5-10 mins",
+          "Obtain blood culture & blood gas",
+          "Administer IV Ceftriaxone 75 mg/kg + IV Vancomycin 15 mg/kg within 60 minutes",
+          "Initiate Epinephrine or Norepinephrine infusion for fluid-refractory shock",
+          "Admit to PICU"
+        ],
+        "cantMiss": [
+          "Meningococcemia",
+          "Toxic Shock Syndrome",
+          "Refractory Septic Shock"
+        ]
+      },
+      "yellow_zone": {
+        "id": "yellow_zone",
+        "type": "terminal",
+        "title": "Targeted Evaluation (Yellow Zone)",
+        "prompt": "Establish IV access. Administer 20 mL/kg Isotonic Crystalloid bolus over 20-30 minutes. Send blood culture, CBC, lactate, and CRP. Administer antibiotics within 180 minutes.",
+        "actions": [
+          "Secure IV access",
+          "Administer 20 mL/kg crystalloid bolus over 20 mins",
+          "Obtain blood culture, CBC, CMP, venous lactate",
+          "Administer broad-spectrum antibiotics IV within 180 mins",
+          "Monitor serial blood lactates"
+        ],
+        "cantMiss": [
+          "Occult Sepsis",
+          "Adrenal Insufficiency"
+        ]
+      },
+      "green_zone": {
+        "id": "green_zone",
+        "type": "terminal",
+        "title": "Standard Evaluation (Green Zone)",
+        "prompt": "Evaluate for localized source of fever (otitis, pharyngitis, UTI, pneumonia). Manage symptoms. Observe and reassess.",
+        "actions": [
+          "Examine for focal infection source",
+          "Acetaminophen PO for fever",
+          "Re-evaluate vitals prior to discharge"
+        ],
+        "cantMiss": [
+          "Early localized infection (UTI/Pneumonia)"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-status",
+    "title": "Status Epilepticus",
+    "version": "2026.1",
+    "chiefComplaints": ["seizure", "active seizure", "convulsion", "status epilepticus", "fits"],
+    "tags": ["PALS", "Critical Care", "Neurology"],
+    "acuity": "critical",
+    "warning": "Continuous seizure activity >= 5 minutes is Status Epilepticus. Timed escalations are critical to prevent neuronal injury.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Stage 1 (0–10 Minutes)",
+        "prompt": "Active seizure >= 5 minutes. Administer first-line Benzodiazepines (IV Lorazepam or IV/IN/IM Midazolam). Did the seizure stop?",
+        "options": [
+          { "label": "No (Active seizure persists)", "next": "stage_2" },
+          { "label": "Yes (Seizure stopped)", "next": "post_seizure_obs" }
+        ]
+      },
+      "stage_2": {
+        "id": "stage_2",
+        "type": "checkpoint",
+        "title": "Stage 2 (10–30 Minutes)",
+        "prompt": "Administer second dose of Benzodiazepines. Initiate second-line IV non-benzodiazepine anti-seizure medication (Levetiracetam/Keppra, Fosphenytoin, or Valproate). Did the seizure stop?",
+        "options": [
+          { "label": "No (Active seizure persists > 30 mins)", "next": "stage_3" },
+          { "label": "Yes (Seizure stopped)", "next": "post_seizure_obs" }
+        ]
+      },
+      "stage_3": {
+        "id": "stage_3",
+        "type": "terminal",
+        "title": "Stage 3 (Refractory Status)",
+        "prompt": "Refractory Status Epilepticus. Prepare for rapid sequence intubation (RSI) using propofol/ketamine. Initiate continuous anesthetic infusion (Midazolam, Propofol, or Pentobarbital). Urgent ICU admission and continuous EEG monitoring required.",
+        "actions": [
+          "Prepare for airway management / RSI",
+          "Initiate continuous IV infusion of Midazolam (0.2-2.0 mg/kg/hr) or Propofol",
+          "Order urgent continuous EEG monitoring",
+          "Consult Pediatric Neurology & PICU"
+        ],
+        "cantMiss": [
+          "Intracranial Hemorrhage",
+          "Meningitis / Encephalitis",
+          "Electrolyte abnormalities (Hyponatremia)"
+        ]
+      },
+      "post_seizure_obs": {
+        "id": "post_seizure_obs",
+        "type": "terminal",
+        "title": "Post-Ictal Observation",
+        "prompt": "Seizure stopped. Place in lateral recovery position, support airway, check fingerstick glucose and electrolytes, monitor for post-ictal recovery.",
+        "actions": [
+          "Check fingerstick blood glucose",
+          "Obtain basic metabolic panel (Sodium, Calcium)",
+          "Maintain recovery position & monitor airway",
+          "Observe until returned to baseline neuro status"
+        ],
+        "cantMiss": [
+          "Todd's Paralysis",
+          "Hypoglycemia",
+          "Recurrent Seizure"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-dka",
+    "title": "Diabetic Ketoacidosis (DKA)",
+    "version": "2026.1",
+    "chiefComplaints": ["dka", "hyperglycemia", "high blood sugar", "altered mental status", "vomiting", "kussmaul breathing", "polydipsia", "polyuria"],
+    "tags": ["Endocrine", "Critical Care", "Fluids"],
+    "acuity": "critical",
+    "warning": "Do not administer insulin bolus in pediatric DKA. Delay insulin infusion by 1-2 hours after initiating fluid resuscitation to minimize cerebral edema risk.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Diagnosis Verification",
+        "prompt": "Verify DKA criteria: Blood Glucose > 200 mg/dL, Venous pH < 7.3, Bicarbonate < 15 mEq/L, and ketonuria/ketonemia. Assess mental status (GCS):",
+        "options": [
+          { "label": "GCS < 14 or abnormal neurological signs (high risk cerebral edema)", "next": "critical_dka" },
+          { "label": "GCS 15 (stable mental status)", "next": "dka_resuscitation" }
+        ]
+      },
+      "dka_resuscitation": {
+        "id": "dka_resuscitation",
+        "type": "checkpoint",
+        "title": "Fluid and Insulin Initiation",
+        "prompt": "1. Administer 10-20 mL/kg Isotonic Crystalloid (NS) over 1-2 hours. 2. Establish two-bag IV fluid system (one containing Dextrose, one without; adjust dextrose based on blood glucose drop). 3. Initiate continuous IV Insulin infusion at 0.05 - 0.1 units/kg/hour delayed 1-2 hours after fluids start. Does blood glucose remain stable?",
+        "options": [
+          { "label": "Yes (gradual decline, electrolytes monitored)", "next": "dka_monitoring" },
+          { "label": "No (rapid glucose drop > 100 mg/dL/hr or hypokalemia)", "next": "dka_adjustments" }
+        ]
+      },
+      "critical_dka": {
+        "id": "critical_dka",
+        "type": "terminal",
+        "title": "Emergent ICU Admission & Brain Protection",
+        "prompt": "High risk for cerebral edema. Admit directly to PICU. Initiate hyperosmolar therapy (Mannitol 0.5-1.0 g/kg IV or 3% Hypertonic Saline 3-5 mL/kg IV). Slow down fluid administration, secure airway under controlled conditions if GCS declines.",
+        "actions": [
+          "Admit immediately to PICU",
+          "Administer Mannitol 1 g/kg IV over 20 minutes or 3% Hypertonic Saline 3 mL/kg IV",
+          "Decrease IV fluid rate by 10-20%",
+          "Hourly neurological checks (pupils, GCS)"
+        ],
+        "cantMiss": [
+          "Cerebral Edema",
+          "Severe Hypokalemia (ventricular arrhythmia)",
+          "Aspiration Pneumonia"
+        ]
+      },
+      "dka_monitoring": {
+        "id": "dka_monitoring",
+        "type": "terminal",
+        "title": "DKA ICU/Ward Monitoring",
+        "prompt": "Maintain fluid rate and insulin infusion. Check blood glucose hourly and electrolytes/venous blood gas every 2 hours. Monitor closely for headache, bradycardia, or pupillary changes.",
+        "actions": [
+          "Hourly blood glucose checks",
+          "Every 2 hours BMP & Venous blood gas",
+          "Add Potassium (K-Phos and K-Acetate) to IV fluids once urine output is confirmed",
+          "Continuous ECG monitoring for T-wave changes"
+        ],
+        "cantMiss": [
+          "Cerebral Edema",
+          "Hypokalemia",
+          "Hypoglycemia"
+        ]
+      },
+      "dka_adjustments": {
+        "id": "dka_adjustments",
+        "type": "terminal",
+        "title": "Fluid/Insulin Adjustments",
+        "prompt": "Adjust the two-bag fluid ratio to increase dextrose concentration if blood glucose drops > 100 mg/dL/hr. Hold or reduce insulin infusion only if hypoglycemia is severe, or potassium drops < 3.3 mEq/L (add potassium to bag).",
+        "actions": [
+          "Increase Dextrose to D10 or D12.5 in IV fluids",
+          "Administer potassium replacement if serum K < 3.3 mEq/L before starting/continuing insulin",
+          "Consult Pediatric Endocrinology"
+        ],
+        "cantMiss": [
+          "Cardiac Arrhythmia due to hypokalemia",
+          "Rapid osmotic shift / cerebral edema"
+        ]
+      }
+    }
+  },
+  {
+    "id": "pals-scd-fever",
+    "title": "Sickle Cell Disease with Fever",
+    "version": "2026.1",
+    "chiefComplaints": ["fever in sickle cell", "sickle cell fever", "scd fever", "sickle cell crisis"],
+    "tags": ["Hematology", "Fever", "Infection"],
+    "acuity": "emergent",
+    "warning": "Fever in sickle cell disease is an emergency due to functional asplenia and rapid pneumococcal sepsis. Administer Ceftriaxone within 60 minutes of presentation.",
+    "startNodeId": "start",
+    "nodes": {
+      "start": {
+        "id": "start",
+        "type": "checkpoint",
+        "title": "Triage & Initial Screening",
+        "prompt": "Obtain quick vitals. Is patient showing signs of toxic appearance, hypotension, respiratory distress, or severe splenic enlargement?",
+        "options": [
+          { "label": "Yes (toxic, respiratory distress, or severe splenomegaly)", "next": "critical_scd" },
+          { "label": "No (stable, well-appearing febrile SCD)", "next": "standard_scd_fever" }
+        ]
+      },
+      "standard_scd_fever": {
+        "id": "standard_scd_fever",
+        "type": "terminal",
+        "title": "Rapid Workup & Antibiotics",
+        "prompt": "Secure IV access. Draw CBC, reticulocyte count, blood culture, and type & screen. Administer IV Ceftriaxone within 60 minutes. Obtain chest X-ray if cough or chest pain is present.",
+        "actions": [
+          "Obtain blood culture & CBC",
+          "Order reticulocyte count & type & screen",
+          "Administer IV Ceftriaxone 50 mg/kg (Max 2g) within 60 minutes of triage",
+          "Order Chest X-ray if respiratory symptoms present"
+        ],
+        "cantMiss": [
+          "Pneumococcal Sepsis",
+          "Acute Chest Syndrome (new infiltrate on CXR)",
+          "Aplastic Crisis (reticulocyte < 1%)"
+        ]
+      },
+      "critical_scd": {
+        "id": "critical_scd",
+        "type": "terminal",
+        "title": "SCD Emergency Resuscitation",
+        "prompt": "Immediate oxygen therapy, IV/IO access, fluid resuscitation (cautious 10 mL/kg bolus if hypovolemic), IV Ceftriaxone, and crossmatch PRBCs. Consult Hematology and prepare for admission.",
+        "actions": [
+          "Provide supplemental high-flow Oxygen",
+          "Administer IV Ceftriaxone 50 mg/kg immediately",
+          "Order emergent CBC, reticulocyte count, and type & crossmatch 2 units PRBCs",
+          "Bedside ultrasound to check spleen size",
+          "Consult Hematology & ICU"
+        ],
+        "cantMiss": [
+          "Splenic Sequestration (acute drop in Hb + splenomegaly)",
+          "Acute Chest Syndrome",
+          "Severe Bacterial Sepsis"
+        ]
+      }
+    }
+  }
+]
