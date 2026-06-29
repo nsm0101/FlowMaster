@@ -17,12 +17,15 @@
     "lucide-react": "^0.546.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
+    "react-native": "^0.86.0",
+    "react-native-web": "^0.21.2",
     "vite": "^6.4.1"
   },
   "devDependencies": {
     "@types/express": "^4.17.25",
     "@types/react": "^19.2.0",
     "@types/react-dom": "^19.2.0",
+    "@types/react-native": "^0.72.8",
     "tsx": "^4.21.0",
     "typescript": "^5.8.3"
   }

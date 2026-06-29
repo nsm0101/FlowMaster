@@ -1,267 +1,1724 @@
-import React, { useMemo, useState } from 'react';
-import { AlertTriangle, ArrowLeft, BellRing, CheckCircle2, ClipboardCheck, ClipboardList, Clock3, GitBranch, ListChecks, Map, PlayCircle, RefreshCcw, Search, Stethoscope, UserRoundCheck } from 'lucide-react';
-import { createPatientFlowState } from './engine/patientFlowHandoff';
-import { createSnapshot, getNode, makeDecisionStep, matchPathways } from './engine/pathwayEngine';
-import { DemoRoster } from './components/DemoRoster';
-import { WaveMark } from './components/Logo';
+/**
+ * PEM FlowMaster - Pediatric Emergency Medicine Clinical Pathway Navigator
+ * 
+ * NOTE FOR NATIVE BUILD (iOS/Android):
+ * If copying this code to a React Native / Expo project:
+ * 1. Change the Lucide icon import from 'lucide-react' to 'lucide-react-native'.
+ * 2. Install 'react-native-svg' and 'lucide-react-native' in your Expo project.
+ * 3. The logic and layout structure will run natively out-of-the-box.
+ */
+
+import React, { useState, useMemo } from 'react';
+import {
+  StyleSheet,
+  View,
+  Text,
+  TouchableOpacity,
+  ScrollView,
+  TextInput,
+  useWindowDimensions,
+  SafeAreaView,
+  Platform,
+  StatusBar
+} from 'react-native';
+import {
+  Search,
+  AlertTriangle,
+  ArrowLeft,
+  RefreshCcw,
+  BookOpen,
+  Clock,
+  Activity,
+  CheckCircle,
+  FileText,
+  ShieldAlert,
+  Heart,
+  ChevronRight,
+  User,
+  Plus,
+  Info,
+  Layers,
+  Map,
+  Compass,
+  FileSearch,
+  CheckSquare,
+  Sparkles,
+  Stethoscope,
+  Laptop,
+  Smartphone
+} from 'lucide-react';
 import { getPathwayById, pathwayRegistry } from './pathways';
-import type { DecisionStep, NormalizedPatientFlowState, PatientContext } from './types/flowmaster';
+import { createSnapshot, getNode, makeDecisionStep, matchPathways } from './engine/pathwayEngine';
+import { createPatientFlowState } from './engine/patientFlowHandoff';
+import type { DecisionStep, PathwayNode, Pathway, PatientContext } from './types/flowmaster';
 
-const emptyPatient: PatientContext = { complaint: '', age: 5, unit: 'years', appearance: 'well', notes: '' };
-
-type Actionability = 'Ready now' | 'Blocked' | 'Snoozed' | 'Needs review';
-
-type DemoPatient = {
-  id: string;
-  room: string;
-  age: string;
-  chiefComplaint: string;
-  edTime: string;
-  phase: string;
-  nextAction: string;
-  blocker: string;
-  owner: string;
-  dispoTarget: string;
-  actionability: Actionability;
-  reviewed: boolean;
-  snoozedUntil?: string;
+const initialPatientContext: PatientContext = {
+  complaint: '',
+  age: 1,
+  unit: 'years',
+  appearance: 'well',
+  weightKg: undefined,
+  spo2: undefined,
+  temperatureC: undefined,
+  heartRate: undefined,
+  respiratoryRate: undefined,
+  notes: ''
 };
 
-const actionabilityOrder: Actionability[] = ['Ready now', 'Needs review', 'Blocked', 'Snoozed'];
-
-const initialRoster: DemoPatient[] = [
-  { id: 'p1', room: '03', age: '7 mo', chiefComplaint: 'Fever, decreased intake', edTime: '0:42', phase: 'Danger screen', nextAction: 'Recheck perfusion + urine plan', blocker: 'Awaiting cath UA', owner: 'Nurse Lee', dispoTarget: 'Likely discharge if UA negative', actionability: 'Ready now', reviewed: false },
-  { id: 'p2', room: '08', age: '12 yr', chiefComplaint: 'RLQ abdominal pain', edTime: '2:18', phase: 'Workup', nextAction: 'Call ultrasound result to surgery if positive', blocker: 'US read pending', owner: 'Dr. Nguyen', dispoTarget: 'Surgery consult vs PO challenge', actionability: 'Blocked', reviewed: false },
-  { id: 'p3', room: '11', age: '4 yr', chiefComplaint: 'Wheeze', edTime: '1:06', phase: 'Reassessment', nextAction: 'Repeat respiratory score after neb', blocker: 'Snoozed for reassessment window', owner: 'RT Sam', dispoTarget: 'Discharge after 2 hr obs if stable', actionability: 'Snoozed', reviewed: true, snoozedUntil: '15 min' },
-  { id: 'p4', room: '14', age: '16 yr', chiefComplaint: 'Syncope', edTime: '0:23', phase: 'Initial assessment', nextAction: 'Review ECG + red flags', blocker: 'None', owner: 'Unassigned', dispoTarget: 'Home if ECG normal and low risk', actionability: 'Needs review', reviewed: false },
-];
-
-const createDemoFlowState = (patient: PatientContext, pathwayTitle: string, acuity: NormalizedPatientFlowState['acuity']): NormalizedPatientFlowState => ({
-  identity: {
-    patientId: 'demo-patient',
-    encounterId: 'demo-encounter',
-    initials: 'DEMO',
-  },
-  encounter: {
-    encounterId: 'demo-encounter',
-    trackingStatus: 'Manual MVP',
-    locationSource: 'manual',
-  },
-  room: 'TBD',
-  chiefComplaint: patient.complaint || pathwayTitle,
-  age: {
-    value: patient.age,
-    unit: patient.unit,
-  },
-  acuity,
-  status: patient.appearance === 'unstable' || patient.appearance === 'toxic' ? 'needs-provider' : 'active',
-  phase: 'initial-assessment',
-  nextAction: {
-    label: 'Use pathway to identify the next care-advancing action',
-    ownerRole: 'attending',
-    source: 'pathway',
-    confidence: 'needs-review',
-  },
-  owner: {
-    role: 'attending',
-    source: 'manual',
-  },
-  dispositionTarget: 'undecided',
-  review: {},
-  sourceLabels: ['manual', 'pathway'],
-  updatedAt: new Date().toISOString(),
-});
-
-function Tag({ children, tone = 'neutral' }: { children: React.ReactNode; tone?: string }) {
-  return <span className={`tag ${tone}`}>{children}</span>;
-}
-
-function Panel({ title, icon, children }: { title: string; icon?: React.ReactNode; children: React.ReactNode }) {
-  return <section className="panel"><h3>{icon}{title}</h3>{children}</section>;
-}
-
-function List({ items }: { items?: string[] }) {
-  return items?.length ? <ul className="tight">{items.map((x, i) => <li key={i}>{x}</li>)}</ul> : <p className="muted">None listed.</p>;
-}
-
-function roomValue(room: string) {
-  const value = Number.parseInt(room.replace(/\D/g, ''), 10);
-  return Number.isNaN(value) ? Number.MAX_SAFE_INTEGER : value;
-}
-
 export default function App() {
-  const [patient, setPatient] = useState<PatientContext>(emptyPatient);
-  const [pathwayId, setPathwayId] = useState(pathwayRegistry[0].id);
-  const pathway = getPathwayById(pathwayId);
-  const [nodeId, setNodeId] = useState(pathway.startNodeId);
+  const { width } = useWindowDimensions();
+  const isDesktop = width >= 1024;
+
+  // App Mode: 'guided' (step-by-step) vs 'reference' (full algorithm)
+  const [appMode, setAppMode] = useState<'guided' | 'reference'>('guided');
+
+  // Mobile Tab: 'navigator' | 'context' | 'safeguards'
+  const [mobileTab, setMobileTab] = useState<'navigator' | 'context' | 'safeguards'>('navigator');
+
+  // Patient Context
+  const [patient, setPatient] = useState<PatientContext>(initialPatientContext);
+  
+  // Active Pathway
+  const [pathwayId, setPathwayId] = useState<string>(pathwayRegistry[0].id);
+  const pathway = useMemo(() => getPathwayById(pathwayId), [pathwayId]);
+
+  // Pathway Search
+  const [searchQuery, setSearchQuery] = useState('');
+  const matchedPathwaysList = useMemo(() => {
+    return matchPathways(pathwayRegistry, searchQuery);
+  }, [searchQuery]);
+
+  // Decision State
+  const [nodeId, setNodeId] = useState<string>(pathway.startNodeId);
   const [history, setHistory] = useState<DecisionStep[]>([]);
-  const [query, setQuery] = useState('');
-  const [roster, setRoster] = useState<DemoPatient[]>(initialRoster);
+  const [completedActions, setCompletedActions] = useState<Record<string, boolean>>({});
 
-  const currentNode = getNode(pathway, nodeId);
-  const snapshot = createSnapshot(pathway, currentNode, patient, history);
-  const flowState = useMemo(() => createDemoFlowState(patient, pathway.title, pathway.acuity), [patient, pathway.title, pathway.acuity]);
+  // Active node & calculations
+  const currentNode = useMemo(() => getNode(pathway, nodeId), [pathway, nodeId]);
+  const snapshot = useMemo(() => createSnapshot(pathway, currentNode, patient, history), [pathway, currentNode, patient, history]);
   const patientFlow = useMemo(() => createPatientFlowState(pathway, currentNode, history), [pathway, currentNode, history]);
-  const matchedPathways = useMemo(() => matchPathways(pathwayRegistry, patient.complaint), [patient.complaint]);
-  const visiblePathways = matchedPathways.length ? matchedPathways : pathwayRegistry;
-  const sortedRoster = useMemo(() => [...roster].sort((a, b) => roomValue(a.room) - roomValue(b.room) || a.room.localeCompare(b.room)), [roster]);
-  const attentionGroups = useMemo(() => actionabilityOrder.map((group) => ({
-    group,
-    patients: sortedRoster.filter((item) => item.actionability === group),
-  })).filter(({ patients }) => patients.length), [sortedRoster]);
-  const searchNodes = Object.values(pathway.nodes).filter((node) =>
-    [node.title, node.prompt, ...(node.actions ?? []), ...(node.cantMiss ?? []), ...(node.dispositionCriteria ?? [])]
-      .join(' ')
-      .toLowerCase()
-      .includes(query.toLowerCase())
-  );
 
-  function selectPathway(id: string) {
-    const next = getPathwayById(id);
+  // UI state for showing/hiding advanced vitals
+  const [showVitals, setShowVitals] = useState(false);
+
+  // Switch pathways cleanly
+  const selectPathway = (id: string) => {
     setPathwayId(id);
-    setNodeId(next.startNodeId);
+    const targetPathway = getPathwayById(id);
+    setNodeId(targetPathway.startNodeId);
     setHistory([]);
-  }
+    setCompletedActions({});
+    if (!isDesktop) {
+      setMobileTab('navigator');
+    }
+  };
 
-  function choose(option: NonNullable<typeof currentNode.options>[number]) {
+  // Guided step decision handler
+  const handleChooseOption = (option: any) => {
     const step = makeDecisionStep(pathway, currentNode, option.label, option.next, option.flags ?? [], option.actions ?? []);
-    setHistory((prior) => [...prior, step]);
+    setHistory((prev) => [...prev, step]);
     setNodeId(option.next);
-  }
+  };
 
-  function back() {
+  // Step backward handler
+  const handleGoBack = () => {
+    if (history.length === 0) return;
     const prior = history[history.length - 1];
-    setHistory((items) => items.slice(0, -1));
-    if (prior) setNodeId(prior.nodeId);
-  }
+    setHistory((prev) => prev.slice(0, -1));
+    setNodeId(prior.nodeId);
+  };
 
-  function reset() {
+  // Reset algorithm path
+  const handleResetPathway = () => {
     setNodeId(pathway.startNodeId);
     setHistory([]);
-  }
+    setCompletedActions({});
+  };
 
+  // Toggle workup checklist item
+  const toggleAction = (actionText: string) => {
+    setCompletedActions((prev) => ({
+      ...prev,
+      [actionText]: !prev[actionText]
+    }));
+  };
 
-  function updateRoster(id: string, patch: Partial<DemoPatient>) {
-    setRoster((items) => items.map((item) => item.id === id ? { ...item, ...patch } : item));
-  }
+  // Calculate age description badge
+  const ageDescription = `${patient.age} ${patient.unit}`;
+  const resolvedAgeBand = snapshot.ageBand;
 
-  function markReviewed(id: string) {
-    updateRoster(id, { reviewed: true, actionability: 'Ready now', blocker: 'None' });
-  }
+  // Render Left Column: Search & Context Inputs
+  const renderLeftPanel = () => (
+    <View style={styles.card}>
+      <View style={styles.cardHeader}>
+        <Stethoscope color="#14B8A6" size={18} />
+        <Text style={styles.cardTitle}>Clinical Context</Text>
+      </View>
 
-  function snooze(id: string) {
-    updateRoster(id, { actionability: 'Snoozed', snoozedUntil: '15 min', blocker: 'Snoozed for reassessment window' });
-  }
+      <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
+        {/* Pathway Search & Select */}
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Search Symptoms/Pathways</Text>
+          <View style={styles.searchContainer}>
+            <Search color="#94A3B8" size={16} style={styles.searchIcon} />
+            <TextInput
+              style={styles.searchField}
+              placeholder="e.g. fever, limp, seizure..."
+              placeholderTextColor="#64748B"
+              value={searchQuery}
+              onChangeText={setSearchQuery}
+            />
+          </View>
+        </View>
 
-  return <div className="app">
-    <header className="hero">
-      <div className="heroLead">
-        <div className="brand">
-          <span className="brandMark"><WaveMark size={56} /></span>
-          <div>
-            <p className="eyebrow">PEM FlowMaster MVP</p>
-            <h1>PEM FlowMaster</h1>
-          </div>
-        </div>
-        <p>Pediatric ED pathway navigator plus a manual demo roster: room-sorted list, actionability-first attention queue, roadmap view, and running-the-list mode for shift huddles.</p>
-      </div>
-      <div className="heroCard"><Stethoscope /><b>Clinical safety layer</b><span>ABCDE → branch → workup → reassess → disposition</span></div>
-    </header>
+        <View style={styles.pathwayList}>
+          {matchedPathwaysList.slice(0, 4).map((item) => (
+            <TouchableOpacity
+              key={item.id}
+              activeOpacity={0.7}
+              style={[
+                styles.pathwayItem,
+                item.id === pathway.id && styles.pathwayItemActive
+              ]}
+              onPress={() => selectPathway(item.id)}
+            >
+              <View style={styles.pathwayHeaderRow}>
+                <Text style={[
+                  styles.pathwayItemTitle,
+                  item.id === pathway.id && styles.pathwayItemTitleActive
+                ]}>{item.title}</Text>
+                <ChevronRight color={item.id === pathway.id ? '#14B8A6' : '#475569'} size={14} />
+              </View>
+              <Text style={styles.pathwayItemDesc}>{item.chiefComplaints.join(' · ')}</Text>
+            </TouchableOpacity>
+          ))}
+          {matchedPathwaysList.length === 0 && (
+            <Text style={styles.emptyText}>No matching pathways found.</Text>
+          )}
+        </View>
 
-    <main className="grid">
-      <aside className="left">
-        <Panel title="Patient context" icon={<ClipboardList />}>
-          <label>Chief complaint<input value={patient.complaint} onChange={(e) => setPatient({ ...patient, complaint: e.target.value })} placeholder="fever, limp, seizure..." /></label>
-          <div className="row">
-            <label>Age<input type="number" value={patient.age} onChange={(e) => setPatient({ ...patient, age: Number(e.target.value) })} /></label>
-            <label>Unit<select value={patient.unit} onChange={(e) => setPatient({ ...patient, unit: e.target.value as PatientContext['unit'] })}><option>days</option><option>months</option><option>years</option></select></label>
-          </div>
-          <div className="row">
-            <label>Wt kg<input type="number" value={patient.weightKg ?? ''} onChange={(e) => setPatient({ ...patient, weightKg: e.target.value ? Number(e.target.value) : undefined })} /></label>
-            <label>SpO2<input type="number" value={patient.spo2 ?? ''} onChange={(e) => setPatient({ ...patient, spo2: e.target.value ? Number(e.target.value) : undefined })} /></label>
-          </div>
-          <label>Appearance<select value={patient.appearance} onChange={(e) => setPatient({ ...patient, appearance: e.target.value as PatientContext['appearance'] })}><option>well</option><option>ill</option><option>toxic</option><option>unstable</option></select></label>
-          <label>Notes<textarea value={patient.notes} onChange={(e) => setPatient({ ...patient, notes: e.target.value })} /></label>
-          <div className="mini"><Tag tone="blue">Age band: {snapshot.ageBand}</Tag>{patient.weightKg && <Tag>{patient.weightKg} kg</Tag>}</div>
-        </Panel>
+        {/* Patient Parameters */}
+        <View style={styles.divider} />
+        
+        <Text style={styles.subSectionTitle}>Patient Profile</Text>
 
-        <Panel title="Pathways" icon={<GitBranch />}>
-          {visiblePathways.map((item) => <button key={item.id} onClick={() => selectPathway(item.id)} className={`pathBtn ${item.id === pathway.id ? 'active' : ''}`}><b>{item.title}</b><span>{item.chiefComplaints.slice(0, 3).join(' · ')}</span></button>)}
-        </Panel>
-      </aside>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Age Value</Text>
+          <TextInput
+            style={styles.textInput}
+            keyboardType="numeric"
+            value={patient.age.toString()}
+            onChangeText={(val) => setPatient(prev => ({ ...prev, age: Number(val) || 0 }))}
+          />
+        </View>
 
-      <section className="center">
-        <div className="pathHeader"><div><h2>{pathway.title}</h2><p>{pathway.warning}</p></div><div className="mini"><Tag tone={pathway.acuity === 'emergent' || pathway.acuity === 'critical' ? 'danger' : 'warn'}>{pathway.acuity}</Tag>{pathway.tags.map((tag) => <Tag key={tag}>{tag}</Tag>)}</div></div>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Age Unit</Text>
+          <View style={styles.pickerRow}>
+            {(['days', 'months', 'years'] as const).map((unit) => (
+              <TouchableOpacity
+                key={unit}
+                activeOpacity={0.7}
+                style={[
+                  styles.pickerBtn,
+                  patient.unit === unit && styles.pickerBtnActive
+                ]}
+                onPress={() => setPatient(prev => ({ ...prev, unit }))}
+              >
+                <Text style={[
+                  styles.pickerBtnText,
+                  patient.unit === unit && styles.pickerBtnTextActive
+                ]}>{unit}</Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+        </View>
 
-        <article className={`node ${currentNode.type === 'terminal' ? 'terminal' : ''}`}>
-          <p className="nodeType">{currentNode.type}</p>
-          <h2>{currentNode.title}</h2>
-          <p className="prompt">{currentNode.prompt}</p>
-          {currentNode.options?.length ? <div className="options">{currentNode.options.map((option) => <button key={option.label} onClick={() => choose(option)}>{option.label}</button>)}</div> : <div className="done"><CheckCircle2 /> Terminal node reached</div>}
-          <div className="controls"><button onClick={back} disabled={!history.length}><ArrowLeft /> Back</button><button onClick={reset}><RefreshCcw /> Reset</button></div>
-        </article>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Clinical Appearance</Text>
+          <View style={styles.pickerGrid}>
+            {(['well', 'ill', 'toxic', 'unstable'] as const).map((appearance) => {
+              const isActive = patient.appearance === appearance;
+              return (
+                <TouchableOpacity
+                  key={appearance}
+                  activeOpacity={0.7}
+                  style={[
+                    styles.pickerBtn,
+                    styles.pickerGridBtn,
+                    isActive && appearance === 'toxic' && styles.pickerBtnToxicActive,
+                    isActive && appearance === 'unstable' && styles.pickerBtnUnstableActive,
+                    isActive && appearance === 'ill' && styles.pickerBtnIllActive,
+                    isActive && appearance === 'well' && styles.pickerBtnWellActive,
+                  ]}
+                  onPress={() => setPatient(prev => ({ ...prev, appearance }))}
+                >
+                  <Text style={[
+                    styles.pickerBtnText,
+                    isActive && styles.pickerBtnTextActiveWhite
+                  ]}>{appearance}</Text>
+                </TouchableOpacity>
+              );
+            })}
+          </View>
+        </View>
 
-        <Panel title="Operational patient-flow handoff" icon={<ClipboardList />}>
-          <div className="handoffGrid">
-            <div><b>Recommended next action</b><p>{patientFlow.recommendedNextAction}</p></div>
-            <div><b>Can’t-miss diagnoses</b><List items={patientFlow.cantMissDiagnoses} /></div>
-            <div><b>Reassessment checkpoint</b><List items={patientFlow.reassessmentCheckpoints} /></div>
-            <div><b>Disposition readiness item</b><List items={patientFlow.dispositionReadinessItems} /></div>
-            <div><b>Warning / urgency flag</b><List items={patientFlow.warningUrgencyFlags} /></div>
-          </div>
-          <p className="muted handoffMeta">Source: {patientFlow.source} · Current node: {patientFlow.currentNodeTitle} · Updated {new Date(patientFlow.updatedAt).toLocaleTimeString()}</p>
-        </Panel>
+        {/* Toggleable Advanced Vitals */}
+        <TouchableOpacity
+          activeOpacity={0.7}
+          onPress={() => setShowVitals(!showVitals)}
+          style={styles.vitalsToggle}
+        >
+          <Activity size={14} color="#14B8A6" />
+          <Text style={styles.vitalsToggleText}>
+            {showVitals ? 'Hide Vitals & Weights' : 'Add Vitals & Weight'}
+          </Text>
+        </TouchableOpacity>
 
-        <div className="demoSections">
-          <Panel title="Attention queue" icon={<BellRing />}>
-            <p className="muted">Grouped by actionability so a new actionable patient can rise above an older blocked workup.</p>
-            <div className="attentionQueue">{attentionGroups.map(({ group, patients }) => <div className="queueGroup" key={group}><h4>{group}</h4>{patients.map((item) => <button key={item.id} onClick={() => markReviewed(item.id)}><b>Room {item.room}</b><span>{item.nextAction}</span></button>)}</div>)}</div>
-          </Panel>
+        {showVitals && (
+          <View style={styles.vitalsBlock}>
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.label}>Weight (kg)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  placeholder="e.g. 12"
+                  placeholderTextColor="#475569"
+                  value={patient.weightKg !== undefined ? patient.weightKg.toString() : ''}
+                  onChangeText={(val) => setPatient(prev => ({ ...prev, weightKg: val ? Number(val) : undefined }))}
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={styles.label}>SpO2 (%)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  placeholder="e.g. 98"
+                  placeholderTextColor="#475569"
+                  value={patient.spo2 !== undefined ? patient.spo2.toString() : ''}
+                  onChangeText={(val) => setPatient(prev => ({ ...prev, spo2: val ? Number(val) : undefined }))}
+                />
+              </View>
+            </View>
 
-          <Panel title="Roadmap view" icon={<Map />}>
-            <div className="roadmap">{['Danger screen', 'Workup', 'Reassessment', 'Disposition'].map((step) => <div key={step} className="roadmapStep"><span>{step}</span><b>{sortedRoster.filter((item) => item.phase.includes(step.split(' ')[0])).length}</b></div>)}</div>
-          </Panel>
+            <View style={styles.row}>
+              <View style={[styles.inputGroup, { flex: 1, marginRight: 8 }]}>
+                <Text style={styles.label}>Temp (°C)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  placeholder="38.5"
+                  placeholderTextColor="#475569"
+                  value={patient.temperatureC !== undefined ? patient.temperatureC.toString() : ''}
+                  onChangeText={(val) => setPatient(prev => ({ ...prev, temperatureC: val ? Number(val) : undefined }))}
+                />
+              </View>
+              <View style={[styles.inputGroup, { flex: 1 }]}>
+                <Text style={styles.label}>Heart Rate (bpm)</Text>
+                <TextInput
+                  style={styles.textInput}
+                  keyboardType="numeric"
+                  placeholder="120"
+                  placeholderTextColor="#475569"
+                  value={patient.heartRate !== undefined ? patient.heartRate.toString() : ''}
+                  onChangeText={(val) => setPatient(prev => ({ ...prev, heartRate: val ? Number(val) : undefined }))}
+                />
+              </View>
+            </View>
+          </View>
+        )}
 
-          <Panel title="Running-the-list mode" icon={<ListChecks />}>
-            <div className="rosterList">{sortedRoster.map((item) => <article className="patientCard" key={item.id}>
-              <div className="patientCardTop"><div><p className="room">Room {item.room}</p><h3>{item.chiefComplaint}</h3></div><Tag tone={item.actionability === 'Ready now' ? 'danger' : item.actionability === 'Blocked' ? 'warn' : 'blue'}>{item.actionability}</Tag></div>
-              <dl><div><dt>Age</dt><dd>{item.age}</dd></div><div><dt>ED time</dt><dd>{item.edTime}</dd></div><div><dt>Phase</dt><dd>{item.phase}</dd></div><div><dt>Owner</dt><dd>{item.owner}</dd></div><div className="wide"><dt>Next action</dt><dd>{item.nextAction}</dd></div><div className="wide"><dt>Blocker</dt><dd>{item.blocker}</dd></div><div className="wide"><dt>Dispo target</dt><dd>{item.dispoTarget}</dd></div></dl>
-              {item.snoozedUntil && <p className="muted">Snoozed for {item.snoozedUntil}</p>}
-              <div className="cardActions"><button onClick={() => markReviewed(item.id)}><ClipboardCheck /> Mark reviewed</button><button onClick={() => snooze(item.id)}><Clock3 /> Snooze</button></div>
-              <div className="editGrid"><label>Next action<input value={item.nextAction} onChange={(e) => updateRoster(item.id, { nextAction: e.target.value, actionability: 'Ready now' })} /></label><label>Owner<input value={item.owner} onChange={(e) => updateRoster(item.id, { owner: e.target.value })} /></label><label>Disposition target<input value={item.dispoTarget} onChange={(e) => updateRoster(item.id, { dispoTarget: e.target.value })} /></label></div>
-            </article>)}</div>
-          </Panel>
+        <View style={styles.inputGroup}>
+          <Text style={styles.label}>Clinical Notes (Optional)</Text>
+          <TextInput
+            style={[styles.textInput, styles.textArea]}
+            multiline={true}
+            numberOfLines={3}
+            placeholder="Add relevant history/findings..."
+            placeholderTextColor="#475569"
+            value={patient.notes}
+            onChangeText={(val) => setPatient(prev => ({ ...prev, notes: val }))}
+          />
+        </View>
 
-          <Panel title="MVP demo script" icon={<PlayCircle />}>
-            <ol className="tight"><li>Start with the room-sorted roster and call out every patient in physical ED order.</li><li>Open the attention queue to show why actionable items outrank blocked or snoozed patients.</li><li>Use mark reviewed, set next action, snooze, assign owner, and update disposition target during the huddle.</li><li>Close with the roadmap view: who is in danger screen, workup, reassessment, and disposition.</li></ol>
-          </Panel>
-        </div>
+        {/* Info Badges */}
+        <View style={styles.badgeRow}>
+          <View style={styles.infoBadge}>
+            <Text style={styles.infoBadgeLabel}>Age Band</Text>
+            <Text style={styles.infoBadgeValue}>{resolvedAgeBand}</Text>
+          </View>
+          <View style={styles.infoBadge}>
+            <Text style={styles.infoBadgeLabel}>Acuity Level</Text>
+            <Text style={[
+              styles.infoBadgeValue,
+              pathway.acuity === 'emergent' && styles.textRed,
+              pathway.acuity === 'urgent' && styles.textOrange,
+            ]}>{pathway.acuity}</Text>
+          </View>
+        </View>
+      </ScrollView>
+    </View>
+  );
 
-        <div className="twoCol"><Panel title="Actions now" icon={<ClipboardList />}><List items={currentNode.actions} /></Panel><Panel title="Reassessment" icon={<AlertTriangle />}><List items={currentNode.reassess} /></Panel></div>
-        <Panel title="Disposition criteria"><List items={currentNode.dispositionCriteria} /></Panel>
-        <Panel title="Search current pathway" icon={<Search />}><input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="search nodes, actions, diagnoses" />{query && <div className="searchResults">{searchNodes.map((node) => <button key={node.id} onClick={() => setNodeId(node.id)}>{node.title}<span>{node.prompt}</span></button>)}</div>}</Panel>
-      </section>
+  // Render Right Column: Clinical Safeguards (Can't miss, triggers, actions)
+  const renderRightPanel = () => {
+    const showAttendingTrigger = snapshot.attendingTriggers.length > 0;
+    const showCantMiss = patientFlow.cantMissDiagnoses.length > 0;
+    const showDisposition = currentNode.type === 'terminal' || (currentNode.dispositionCriteria && currentNode.dispositionCriteria.length > 0);
+    const showWorkup = snapshot.activeActions.length > 0;
 
-      <aside className="right">
-        <Panel title="Can’t miss" icon={<AlertTriangle />}><List items={snapshot.cantMiss} /></Panel>
-        <Panel title="Flow state model">
-          <div className="flowFacts">
-            <span><b>Phase</b>{flowState.phase}</span>
-            <span><b>Status</b>{flowState.status}</span>
-            <span><b>Owner</b>{flowState.owner?.role ?? 'unknown'}</span>
-            <span><b>Dispo</b>{flowState.dispositionTarget}</span>
-          </div>
-          <p className="muted">{flowState.nextAction?.label}</p>
-          <div className="mini">{flowState.sourceLabels.map((source) => <Tag key={source}>{source}</Tag>)}</div>
-        </Panel>
-        <Panel title="Active tasks"><List items={snapshot.activeActions} /></Panel>
-        <Panel title="Flags">{snapshot.activeFlags.length ? snapshot.activeFlags.map((flag) => <Tag key={flag} tone="danger">{flag}</Tag>) : <p className="muted">No active flags.</p>}</Panel>
-        <Panel title="Attending triggers"><List items={snapshot.attendingTriggers} /></Panel>
-        <Panel title="Timeline">{history.length ? <ol className="timeline">{history.map((step, index) => <li key={index}><b>{step.nodeTitle}</b><span>{step.answer} · {step.at}</span></li>)}</ol> : <p className="muted">No decisions yet.</p>}</Panel>
-        <Panel title="Demo owners" icon={<UserRoundCheck />}><List items={[...new Set(sortedRoster.map((item) => item.owner))]} /></Panel>
-      </aside>
-    </main>
+    return (
+      <View style={styles.card}>
+        <View style={styles.cardHeader}>
+          <ShieldAlert color="#F43F5E" size={18} />
+          <Text style={styles.cardTitle}>Reference & Safeguards</Text>
+        </View>
 
-    <footer>This tool supports clinician decision-making and does not replace clinical judgment, local policy, or attending supervision.</footer>
-  </div>;
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.panelScroll}>
+          {/* Attending Triggers */}
+          {showAttendingTrigger && (
+            <View style={[styles.alertBlock, styles.alertBlockRed]}>
+              <View style={styles.alertHeader}>
+                <AlertTriangle color="#EF4444" size={15} />
+                <Text style={[styles.alertTitle, styles.textRed]}>ATTENDING NOTIFICATION TRIGGERS</Text>
+              </View>
+              {snapshot.attendingTriggers.map((trig, idx) => (
+                <Text key={idx} style={styles.alertText}>• {trig}</Text>
+              ))}
+            </View>
+          )}
+
+          {/* Can't Miss Diagnoses */}
+          {showCantMiss && (
+            <View style={[styles.alertBlock, styles.alertBlockOrange]}>
+              <View style={styles.alertHeader}>
+                <ShieldAlert color="#F59E0B" size={15} />
+                <Text style={[styles.alertTitle, styles.textOrange]}>CAN'T-MISS DIAGNOSES</Text>
+              </View>
+              <View style={styles.tagContainer}>
+                {patientFlow.cantMissDiagnoses.map((diag, idx) => (
+                  <View key={idx} style={styles.diagTag}>
+                    <Text style={styles.diagTagText}>{diag}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          )}
+
+          {/* Recommended Workup Checklist */}
+          {showWorkup && (
+            <View style={styles.referenceSection}>
+              <Text style={styles.sectionHeading}>ACTIVE CLINICAL WORKUP</Text>
+              <Text style={styles.sectionSubtitle}>Check off actions as they are initiated:</Text>
+              
+              {snapshot.activeActions.map((action, idx) => {
+                const isDone = !!completedActions[action];
+                return (
+                  <TouchableOpacity
+                    key={idx}
+                    activeOpacity={0.7}
+                    style={styles.checklistRow}
+                    onPress={() => toggleAction(action)}
+                  >
+                    <View style={[styles.checkbox, isDone && styles.checkboxChecked]}>
+                      {isDone && <CheckCircle size={12} color="#FFFFFF" />}
+                    </View>
+                    <Text style={[styles.checklistText, isDone && styles.checklistTextChecked]}>
+                      {action}
+                    </Text>
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+          )}
+
+          {/* Reassessment / Disposition */}
+          {showDisposition && (
+            <View style={[styles.alertBlock, styles.alertBlockTeal]}>
+              <View style={styles.alertHeader}>
+                <CheckCircle color="#10B981" size={15} />
+                <Text style={[styles.alertTitle, styles.textTeal]}>DISPOSITION CRITERIA</Text>
+              </View>
+              {(currentNode.dispositionCriteria || patientFlow.dispositionReadinessItems).map((crit, idx) => (
+                <Text key={idx} style={[styles.alertText, { color: '#E2E8F0' }]}>• {crit}</Text>
+              ))}
+            </View>
+          )}
+
+          {/* Normal Node Reassessments */}
+          {!showDisposition && currentNode.reassess && currentNode.reassess.length > 0 && (
+            <View style={styles.referenceSection}>
+              <Text style={[styles.sectionHeading, { color: '#818CF8' }]}>REASSESSMENT CHECKPOINTS</Text>
+              {currentNode.reassess.map((re, idx) => (
+                <Text key={idx} style={styles.reassessText}>• {re}</Text>
+              ))}
+            </View>
+          )}
+
+          {!showAttendingTrigger && !showCantMiss && !showWorkup && !showDisposition && (
+            <View style={styles.emptySafeguards}>
+              <Compass color="#475569" size={32} />
+              <Text style={styles.emptySafeguardsText}>Navigate the pathway nodes to populate clinical recommendations, safeguards, and active care tasks.</Text>
+            </View>
+          )}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // Render Guided Step-by-Step Pathway Navigator
+  const renderGuidedMode = () => {
+    const isTerminal = currentNode.type === 'terminal';
+    const showBack = history.length > 0;
+
+    return (
+      <View style={styles.mainNavCard}>
+        {/* Node Card Header */}
+        <View style={styles.nodeHeader}>
+          <View>
+            <View style={styles.nodePathContainer}>
+              <Text style={styles.nodePathPathwayName}>{pathway.title}</Text>
+              <ChevronRight color="#64748B" size={12} style={{ marginLeft: 4, marginRight: 4 }} />
+              <Text style={styles.nodePathNodeName}>{currentNode.title}</Text>
+            </View>
+            <Text style={styles.nodeTypeBadge}>{currentNode.type}</Text>
+          </View>
+
+          <View style={styles.controlsRow}>
+            {showBack && (
+              <TouchableOpacity
+                activeOpacity={0.7}
+                style={styles.controlBtn}
+                onPress={handleGoBack}
+              >
+                <ArrowLeft color="#14B8A6" size={14} />
+                <Text style={styles.controlBtnText}>Back</Text>
+              </TouchableOpacity>
+            )}
+
+            <TouchableOpacity
+              activeOpacity={0.7}
+              style={[styles.controlBtn, styles.controlBtnSecondary]}
+              onPress={handleResetPathway}
+            >
+              <RefreshCcw color="#94A3B8" size={14} />
+              <Text style={styles.controlBtnTextSecondary}>Restart</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+
+        {/* Node Question / Prompt */}
+        <View style={styles.promptContainer}>
+          <Text style={styles.promptLabel}>CRITICAL QUESTION / STEP</Text>
+          <Text style={styles.promptText}>{currentNode.prompt || 'Evaluate patient state.'}</Text>
+        </View>
+
+        {/* Decision Branches */}
+        {currentNode.options && currentNode.options.length > 0 ? (
+          <View style={styles.optionsBlock}>
+            <Text style={styles.optionsLabel}>SELECT ACTION OR BRANCH:</Text>
+            {currentNode.options.map((option, idx) => (
+              <TouchableOpacity
+                key={idx}
+                activeOpacity={0.7}
+                style={styles.optionButton}
+                onPress={() => handleChooseOption(option)}
+              >
+                <Text style={styles.optionButtonText}>{option.label}</Text>
+                <View style={styles.optionRightContainer}>
+                  {option.flags && option.flags.length > 0 && (
+                    <View style={styles.optionFlag}>
+                      <Text style={styles.optionFlagText}>{option.flags[0]}</Text>
+                    </View>
+                  )}
+                  <ChevronRight color="#14B8A6" size={16} />
+                </View>
+              </TouchableOpacity>
+            ))}
+          </View>
+        ) : (
+          <View style={styles.terminalContainer}>
+            <CheckCircle color="#10B981" size={28} />
+            <Text style={styles.terminalTitle}>Disposition Node Reached</Text>
+            <Text style={styles.terminalText}>Ensure all active diagnostic items are completed and disposition criteria are fully reviewed before finalizing.</Text>
+          </View>
+        )}
+
+        {/* Decision History Trail */}
+        {history.length > 0 && (
+          <View style={styles.historyBlock}>
+            <Text style={styles.historyHeading}>DECISION BREADCRUMBS</Text>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.historyScroll}>
+              {history.map((step, idx) => (
+                <View key={idx} style={styles.historyTag}>
+                  <Text style={styles.historyTagText}>{step.nodeTitle}</Text>
+                  <ChevronRight color="#475569" size={12} style={{ marginLeft: 4, marginRight: 4 }} />
+                  <Text style={styles.historyTagAnswer}>{step.answer}</Text>
+                </View>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+      </View>
+    );
+  };
+
+  // Render Full Pathway Algorithm Reference Explorer
+  const renderReferenceMode = () => {
+    return (
+      <View style={styles.mainNavCard}>
+        <View style={styles.nodeHeader}>
+          <View>
+            <Text style={styles.fullPathwayTitle}>{pathway.title}</Text>
+            <Text style={styles.fullPathwaySub}>Algorithm Reference (Version {pathway.version})</Text>
+          </View>
+          <View style={styles.fullPathwayAcuityBadge}>
+            <Text style={styles.fullPathwayAcuityText}>{pathway.acuity}</Text>
+          </View>
+        </View>
+
+        <View style={styles.warningContainer}>
+          <AlertTriangle color="#F59E0B" size={16} />
+          <Text style={styles.warningText}>{pathway.warning}</Text>
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} style={styles.nodesReferenceScroll}>
+          {Object.values(pathway.nodes).map((node: PathwayNode, index: number) => {
+            const isStart = node.id === pathway.startNodeId;
+            return (
+              <View key={node.id} style={styles.refNodeBlock}>
+                <View style={styles.refNodeHeader}>
+                  <View style={styles.refNodeTitleRow}>
+                    <Text style={styles.refNodeIndex}>{index + 1}</Text>
+                    <Text style={styles.refNodeTitle}>{node.title}</Text>
+                    {isStart && <Text style={styles.startBadge}>Start</Text>}
+                  </View>
+                  <Text style={styles.refNodeType}>{node.type}</Text>
+                </View>
+
+                <Text style={styles.refNodePrompt}>{node.prompt}</Text>
+
+                {node.options && node.options.length > 0 && (
+                  <View style={styles.refOptionsList}>
+                    {node.options.map((opt, oIdx) => (
+                      <View key={oIdx} style={styles.refOptionItem}>
+                        <View style={styles.refOptionLeft}>
+                          <Text style={styles.refOptionBullet}>↪</Text>
+                          <Text style={styles.refOptionLabel}>{opt.label}</Text>
+                        </View>
+                        <View style={styles.refOptionRight}>
+                          <Text style={styles.refOptionDestText}>Goes to:</Text>
+                          <Text style={styles.refOptionDest}>{pathway.nodes[opt.next]?.title || opt.next}</Text>
+                        </View>
+                      </View>
+                    ))}
+                  </View>
+                )}
+
+                {node.cantMiss && node.cantMiss.length > 0 && (
+                  <View style={styles.refNodeMeta}>
+                    <Text style={styles.refNodeMetaLabel}>Can't Miss:</Text>
+                    <Text style={styles.refNodeMetaVal}>{node.cantMiss.join(', ')}</Text>
+                  </View>
+                )}
+
+                {node.actions && node.actions.length > 0 && (
+                  <View style={styles.refNodeMeta}>
+                    <Text style={styles.refNodeMetaLabel}>Actions:</Text>
+                    <Text style={[styles.refNodeMetaVal, { color: '#94A3B8' }]}>{node.actions.join(', ')}</Text>
+                  </View>
+                )}
+              </View>
+            );
+          })}
+        </ScrollView>
+      </View>
+    );
+  };
+
+  // Main Desktop Render
+  const renderDesktop = () => (
+    <View style={styles.desktopContainer}>
+      <View style={styles.sidebarColumn}>
+        {renderLeftPanel()}
+      </View>
+      <View style={styles.mainColumn}>
+        {/* Mode Selector */}
+        <View style={styles.modeTabs}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={[styles.modeTab, appMode === 'guided' && styles.modeTabActive]}
+            onPress={() => setAppMode('guided')}
+          >
+            <Compass size={16} color={appMode === 'guided' ? '#14B8A6' : '#94A3B8'} />
+            <Text style={[styles.modeTabText, appMode === 'guided' && styles.modeTabTextActive]}>Guided Navigator</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={[styles.modeTab, appMode === 'reference' && styles.modeTabActive]}
+            onPress={() => setAppMode('reference')}
+          >
+            <Map size={16} color={appMode === 'reference' ? '#14B8A6' : '#94A3B8'} />
+            <Text style={[styles.modeTabText, appMode === 'reference' && styles.modeTabTextActive]}>Algorithm Explorer</Text>
+          </TouchableOpacity>
+        </View>
+
+        {appMode === 'guided' ? renderGuidedMode() : renderReferenceMode()}
+      </View>
+      <View style={styles.sidebarColumn}>
+        {renderRightPanel()}
+      </View>
+    </View>
+  );
+
+  // Main Mobile Render
+  const renderMobile = () => {
+    return (
+      <View style={styles.mobileContainer}>
+        {/* Mobile Header Context Summary */}
+        <View style={styles.mobileHeaderSummary}>
+          <View style={styles.mobileSummaryLeft}>
+            <Text style={styles.mobileSummaryTitle}>{pathway.title}</Text>
+            <Text style={styles.mobileSummaryContext}>
+              {ageDescription} presenting with "{patient.complaint || 'symptom'}" ({patient.appearance})
+            </Text>
+          </View>
+          <View style={styles.mobileSummaryRight}>
+            <Text style={styles.mobileSummaryNodeText}>{currentNode.title}</Text>
+          </View>
+        </View>
+
+        {/* View switching based on active Mobile Tab */}
+        <View style={styles.mobileMainArea}>
+          {mobileTab === 'context' && renderLeftPanel()}
+          {mobileTab === 'navigator' && (
+            <View style={{ flex: 1 }}>
+              {/* Guided vs Reference mode toggles inside navigator tab */}
+              <View style={styles.mobileModeToggle}>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  style={[styles.mobileModeBtn, appMode === 'guided' && styles.mobileModeBtnActive]}
+                  onPress={() => setAppMode('guided')}
+                >
+                  <Text style={[styles.mobileModeBtnText, appMode === 'guided' && styles.mobileModeBtnTextActive]}>Guided</Text>
+                </TouchableOpacity>
+                <TouchableOpacity
+                  activeOpacity={0.7}
+                  style={[styles.mobileModeBtn, appMode === 'reference' && styles.mobileModeBtnActive]}
+                  onPress={() => setAppMode('reference')}
+                >
+                  <Text style={[styles.mobileModeBtnText, appMode === 'reference' && styles.mobileModeBtnTextActive]}>Reference</Text>
+                </TouchableOpacity>
+              </View>
+
+              {appMode === 'guided' ? renderGuidedMode() : renderReferenceMode()}
+            </View>
+          )}
+          {mobileTab === 'safeguards' && renderRightPanel()}
+        </View>
+
+        {/* Mobile Navigation Tabs */}
+        <View style={styles.mobileTabs}>
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={[styles.mobileTabBtn, mobileTab === 'context' && styles.mobileTabBtnActive]}
+            onPress={() => setMobileTab('context')}
+          >
+            <User size={20} color={mobileTab === 'context' ? '#14B8A6' : '#64748B'} />
+            <Text style={[styles.mobileTabText, mobileTab === 'context' && styles.mobileTabTextActive]}>Patient Info</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={[styles.mobileTabBtn, mobileTab === 'navigator' && styles.mobileTabBtnActive]}
+            onPress={() => setMobileTab('navigator')}
+          >
+            <Compass size={20} color={mobileTab === 'navigator' ? '#14B8A6' : '#64748B'} />
+            <Text style={[styles.mobileTabText, mobileTab === 'navigator' && styles.mobileTabTextActive]}>Navigator</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            activeOpacity={0.7}
+            style={[styles.mobileTabBtn, mobileTab === 'safeguards' && styles.mobileTabBtnActive]}
+            onPress={() => setMobileTab('safeguards')}
+          >
+            <ShieldAlert size={20} color={mobileTab === 'safeguards' ? '#14B8A6' : '#64748B'} />
+            <Text style={[styles.mobileTabText, mobileTab === 'safeguards' && styles.mobileTabTextActive]}>Safeguards</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+    );
+  };
+
+  return (
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="light-content" backgroundColor="#0F172A" />
+      {/* Premium Top Bar */}
+      <View style={styles.header}>
+        <View style={styles.headerTitleContainer}>
+          <View style={brandMarkStyle}>
+            <Heart size={20} color="#14B8A6" fill="#14B8A6" />
+          </View>
+          <View style={styles.headerTextContainer}>
+            <Text style={styles.headerEyebrow}>PEM CLINICAL REFERENCE</Text>
+            <Text style={styles.headerTitle}>FlowMaster</Text>
+          </View>
+        </View>
+
+        <View style={styles.deviceIndicator}>
+          {isDesktop ? (
+            <View style={styles.indicatorBadge}>
+              <Laptop size={12} color="#14B8A6" />
+              <Text style={styles.indicatorText}>Desktop Mode</Text>
+            </View>
+          ) : (
+            <View style={styles.indicatorBadge}>
+              <Smartphone size={12} color="#14B8A6" />
+              <Text style={styles.indicatorText}>Mobile View</Text>
+            </View>
+          )}
+        </View>
+      </View>
+
+      {/* Main Body */}
+      {isDesktop ? renderDesktop() : renderMobile()}
+    </SafeAreaView>
+  );
 }
+
+// Inline workaround for array/tuple styling in React Native Web type safety
+const brandMarkStyle = {
+  padding: 8,
+  backgroundColor: 'rgba(20, 184, 166, 0.12)',
+  borderRadius: 10,
+  borderWidth: 1,
+  borderColor: 'rgba(20, 184, 166, 0.3)',
+};
+
+// StyleSheet using React Native properties
+const styles = StyleSheet.create({
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+  },
+  header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingVertical: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    backgroundColor: '#0F172A',
+  },
+  headerTitleContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  headerTextContainer: {
+    marginLeft: 12,
+  },
+  headerEyebrow: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#14B8A6',
+    letterSpacing: 1.5,
+  },
+  headerTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  deviceIndicator: {
+    flexDirection: 'row',
+  },
+  indicatorBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  indicatorText: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#14B8A6',
+    marginLeft: 4,
+  },
+  desktopContainer: {
+    flex: 1,
+    flexDirection: 'row',
+    padding: 16,
+    gap: 16,
+    backgroundColor: '#0F172A',
+  },
+  mobileContainer: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+  },
+  sidebarColumn: {
+    width: 320,
+  },
+  mainColumn: {
+    flex: 1,
+  },
+  card: {
+    flex: 1,
+    backgroundColor: '#1E293B',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    overflow: 'hidden',
+  },
+  cardHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    backgroundColor: '#1E293B',
+    gap: 10,
+  },
+  cardTitle: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  panelScroll: {
+    flex: 1,
+    padding: 16,
+  },
+  inputGroup: {
+    marginBottom: 14,
+  },
+  label: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#94A3B8',
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 6,
+  },
+  searchContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    paddingHorizontal: 10,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchField: {
+    flex: 1,
+    height: 38,
+    color: '#F8FAFC',
+    fontSize: 13,
+    outlineStyle: 'none', // Works for React Native Web
+  } as any,
+  pathwayList: {
+    marginBottom: 10,
+  },
+  pathwayItem: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 8,
+  },
+  pathwayItemActive: {
+    borderColor: '#14B8A6',
+    backgroundColor: 'rgba(20, 184, 166, 0.08)',
+  },
+  pathwayHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  pathwayItemTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#E2E8F0',
+  },
+  pathwayItemTitleActive: {
+    color: '#14B8A6',
+  },
+  pathwayItemDesc: {
+    fontSize: 10,
+    color: '#64748B',
+    marginTop: 4,
+    textTransform: 'capitalize',
+  },
+  emptyText: {
+    fontSize: 12,
+    color: '#64748B',
+    textAlign: 'center',
+    marginVertical: 10,
+  },
+  divider: {
+    height: 1,
+    backgroundColor: '#334155',
+    marginVertical: 16,
+  },
+  subSectionTitle: {
+    fontSize: 12,
+    fontWeight: '800',
+    color: '#F8FAFC',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    marginBottom: 12,
+  },
+  textInput: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    padding: 10,
+    color: '#F8FAFC',
+    fontSize: 14,
+  },
+  textArea: {
+    height: 60,
+    textAlignVertical: 'top',
+  },
+  pickerRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  pickerGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  pickerBtn: {
+    flex: 1,
+    minWidth: '45%',
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 10,
+    paddingVertical: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pickerGridBtn: {
+    paddingVertical: 8,
+  },
+  pickerBtnActive: {
+    borderColor: '#14B8A6',
+    backgroundColor: 'rgba(20, 184, 166, 0.12)',
+  },
+  pickerBtnWellActive: {
+    borderColor: '#10B981',
+    backgroundColor: 'rgba(16, 185, 129, 0.15)',
+  },
+  pickerBtnIllActive: {
+    borderColor: '#F59E0B',
+    backgroundColor: 'rgba(245, 158, 11, 0.15)',
+  },
+  pickerBtnToxicActive: {
+    borderColor: '#EF4444',
+    backgroundColor: 'rgba(239, 68, 68, 0.2)',
+  },
+  pickerBtnUnstableActive: {
+    borderColor: '#E11D48',
+    backgroundColor: 'rgba(225, 29, 72, 0.25)',
+  },
+  pickerBtnText: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+    textTransform: 'capitalize',
+  },
+  pickerBtnTextActive: {
+    color: '#14B8A6',
+  },
+  pickerBtnTextActiveWhite: {
+    color: '#FFFFFF',
+  },
+  vitalsToggle: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 8,
+    marginVertical: 10,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+    backgroundColor: 'rgba(20, 184, 166, 0.04)',
+    gap: 8,
+  },
+  vitalsToggleText: {
+    color: '#14B8A6',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  vitalsBlock: {
+    marginBottom: 10,
+  },
+  row: {
+    flexDirection: 'row',
+  },
+  badgeRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginTop: 10,
+    marginBottom: 20,
+  },
+  infoBadge: {
+    flex: 1,
+    backgroundColor: '#0F172A',
+    borderRadius: 10,
+    padding: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+    alignItems: 'center',
+  },
+  infoBadgeLabel: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#64748B',
+    textTransform: 'uppercase',
+    marginBottom: 2,
+  },
+  infoBadgeValue: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#F8FAFC',
+    textTransform: 'capitalize',
+  },
+  textRed: {
+    color: '#EF4444',
+  },
+  textOrange: {
+    color: '#F59E0B',
+  },
+  textTeal: {
+    color: '#10B981',
+  },
+  alertBlock: {
+    borderRadius: 12,
+    padding: 12,
+    marginBottom: 14,
+    borderWidth: 1,
+  },
+  alertBlockRed: {
+    backgroundColor: 'rgba(239, 68, 68, 0.08)',
+    borderColor: 'rgba(239, 68, 68, 0.4)',
+  },
+  alertBlockOrange: {
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderColor: 'rgba(245, 158, 11, 0.4)',
+  },
+  alertBlockTeal: {
+    backgroundColor: 'rgba(16, 185, 129, 0.08)',
+    borderColor: 'rgba(16, 185, 129, 0.4)',
+  },
+  alertHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+  alertTitle: {
+    fontSize: 10,
+    fontWeight: '900',
+    letterSpacing: 0.5,
+  },
+  alertText: {
+    fontSize: 11,
+    color: '#CBD5E1',
+    lineHeight: 16,
+    marginBottom: 4,
+  },
+  tagContainer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  diagTag: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  diagTagText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#F59E0B',
+  },
+  referenceSection: {
+    marginBottom: 16,
+    backgroundColor: '#0F172A',
+    borderRadius: 12,
+    padding: 12,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  sectionHeading: {
+    fontSize: 11,
+    fontWeight: '900',
+    color: '#818CF8',
+    letterSpacing: 0.8,
+    marginBottom: 4,
+  },
+  sectionSubtitle: {
+    fontSize: 10,
+    color: '#64748B',
+    marginBottom: 8,
+  },
+  checklistRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingVertical: 8,
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+  },
+  checkbox: {
+    width: 16,
+    height: 16,
+    borderRadius: 4,
+    borderWidth: 2,
+    borderColor: '#475569',
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 10,
+  },
+  checkboxChecked: {
+    backgroundColor: '#14B8A6',
+    borderColor: '#14B8A6',
+  },
+  checklistText: {
+    fontSize: 12,
+    color: '#E2E8F0',
+    flex: 1,
+    lineHeight: 16,
+  },
+  checklistTextChecked: {
+    textDecorationLine: 'line-through',
+    color: '#64748B',
+  },
+  reassessText: {
+    fontSize: 11,
+    color: '#CBD5E1',
+    lineHeight: 16,
+    marginBottom: 6,
+  },
+  emptySafeguards: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    padding: 24,
+    marginTop: 40,
+  },
+  emptySafeguardsText: {
+    fontSize: 12,
+    color: '#475569',
+    textAlign: 'center',
+    marginTop: 10,
+    lineHeight: 18,
+  },
+  modeTabs: {
+    flexDirection: 'row',
+    backgroundColor: '#1E293B',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modeTab: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 10,
+    borderRadius: 8,
+    gap: 8,
+  },
+  modeTabActive: {
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  modeTabText: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  modeTabTextActive: {
+    color: '#14B8A6',
+  },
+  mainNavCard: {
+    flex: 1,
+    backgroundColor: '#1E293B',
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#334155',
+    padding: 20,
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6,
+  },
+  nodeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    paddingBottom: 16,
+    marginBottom: 16,
+  },
+  nodePathContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  nodePathPathwayName: {
+    fontSize: 12,
+    color: '#94A3B8',
+    fontWeight: '500',
+  },
+  nodePathNodeName: {
+    fontSize: 12,
+    color: '#14B8A6',
+    fontWeight: '700',
+  },
+  nodeTypeBadge: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#10B981',
+    textTransform: 'uppercase',
+    letterSpacing: 1.5,
+    backgroundColor: 'rgba(16, 185, 129, 0.1)',
+    alignSelf: 'flex-start',
+    paddingHorizontal: 8,
+    paddingVertical: 2,
+    borderRadius: 6,
+    marginTop: 4,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.2)',
+  },
+  controlsRow: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  controlBtn: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(20, 184, 166, 0.12)',
+    borderWidth: 1,
+    borderColor: '#14B8A6',
+    borderRadius: 8,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    gap: 6,
+  },
+  controlBtnText: {
+    color: '#14B8A6',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  controlBtnSecondary: {
+    backgroundColor: 'transparent',
+    borderColor: '#475569',
+  },
+  controlBtnTextSecondary: {
+    color: '#94A3B8',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  promptContainer: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: '#334155',
+    marginBottom: 20,
+  },
+  promptLabel: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#64748B',
+    letterSpacing: 1,
+    marginBottom: 6,
+  },
+  promptText: {
+    fontSize: 16,
+    color: '#F8FAFC',
+    fontWeight: '600',
+    lineHeight: 24,
+  },
+  optionsBlock: {
+    marginBottom: 20,
+  },
+  optionsLabel: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#94A3B8',
+    letterSpacing: 0.8,
+    marginBottom: 10,
+  },
+  optionButton: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    borderWidth: 1,
+    borderColor: '#334155',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 10,
+  },
+  optionButtonText: {
+    fontSize: 14,
+    fontWeight: '700',
+    color: '#E2E8F0',
+    flex: 1,
+  },
+  optionRightContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  optionFlag: {
+    backgroundColor: 'rgba(244, 63, 94, 0.12)',
+    borderWidth: 1,
+    borderColor: 'rgba(244, 63, 94, 0.3)',
+    borderRadius: 6,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  optionFlagText: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#F43F5E',
+    textTransform: 'uppercase',
+  },
+  terminalContainer: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: 'rgba(16, 185, 129, 0.05)',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: 'rgba(16, 185, 129, 0.25)',
+    padding: 24,
+    marginVertical: 10,
+  },
+  terminalTitle: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#10B981',
+    marginTop: 10,
+    marginBottom: 6,
+  },
+  terminalText: {
+    fontSize: 12,
+    color: '#94A3B8',
+    textAlign: 'center',
+    lineHeight: 18,
+  },
+  historyBlock: {
+    marginTop: 'auto',
+    borderTopWidth: 1,
+    borderTopColor: '#334155',
+    paddingTop: 16,
+  },
+  historyHeading: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    letterSpacing: 1,
+    marginBottom: 8,
+  },
+  historyScroll: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  historyTag: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  historyTagText: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#94A3B8',
+  },
+  historyTagAnswer: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#14B8A6',
+  },
+  fullPathwayTitle: {
+    fontSize: 18,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  fullPathwaySub: {
+    fontSize: 12,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  fullPathwayAcuityBadge: {
+    backgroundColor: 'rgba(244, 63, 94, 0.1)',
+    borderWidth: 1,
+    borderColor: 'rgba(244, 63, 94, 0.25)',
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+  },
+  fullPathwayAcuityText: {
+    fontSize: 10,
+    fontWeight: '900',
+    color: '#F43F5E',
+    textTransform: 'uppercase',
+  },
+  warningContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: 'rgba(245, 158, 11, 0.08)',
+    borderWidth: 1,
+    borderColor: 'rgba(245, 158, 11, 0.3)',
+    borderRadius: 10,
+    padding: 12,
+    marginBottom: 16,
+    gap: 10,
+  },
+  warningText: {
+    fontSize: 11,
+    color: '#F59E0B',
+    flex: 1,
+    lineHeight: 16,
+  },
+  nodesReferenceScroll: {
+    flex: 1,
+  },
+  refNodeBlock: {
+    backgroundColor: '#0F172A',
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#334155',
+    padding: 14,
+    marginBottom: 12,
+  },
+  refNodeHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderBottomWidth: 1,
+    borderBottomColor: '#1E293B',
+    paddingBottom: 8,
+    marginBottom: 8,
+  },
+  refNodeTitleRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+  },
+  refNodeIndex: {
+    fontSize: 11,
+    fontWeight: '800',
+    color: '#14B8A6',
+    backgroundColor: 'rgba(20, 184, 166, 0.1)',
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    textAlign: 'center',
+    lineHeight: 20,
+  },
+  refNodeTitle: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#F8FAFC',
+  },
+  startBadge: {
+    fontSize: 9,
+    fontWeight: '900',
+    color: '#10B981',
+    backgroundColor: 'rgba(16, 185, 129, 0.12)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+    marginLeft: 6,
+    textTransform: 'uppercase',
+  },
+  refNodeType: {
+    fontSize: 9,
+    color: '#64748B',
+    textTransform: 'uppercase',
+    fontWeight: '700',
+  },
+  refNodePrompt: {
+    fontSize: 13,
+    color: '#E2E8F0',
+    lineHeight: 18,
+    marginVertical: 6,
+  },
+  refOptionsList: {
+    backgroundColor: '#1E293B',
+    borderRadius: 10,
+    padding: 10,
+    marginVertical: 6,
+    gap: 8,
+  },
+  refOptionItem: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  refOptionLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    flex: 1,
+  },
+  refOptionBullet: {
+    color: '#14B8A6',
+    fontSize: 14,
+  },
+  refOptionLabel: {
+    fontSize: 12,
+    color: '#CBD5E1',
+    fontWeight: '600',
+  },
+  refOptionRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+  },
+  refOptionDestText: {
+    fontSize: 10,
+    color: '#64748B',
+  },
+  refOptionDest: {
+    fontSize: 11,
+    color: '#14B8A6',
+    fontWeight: '700',
+  },
+  refNodeMeta: {
+    flexDirection: 'row',
+    marginTop: 6,
+    gap: 6,
+  },
+  refNodeMetaLabel: {
+    fontSize: 10,
+    fontWeight: '800',
+    color: '#64748B',
+    textTransform: 'uppercase',
+  },
+  refNodeMetaVal: {
+    fontSize: 11,
+    color: '#F59E0B',
+    fontWeight: '600',
+    flex: 1,
+  },
+  mobileHeaderSummary: {
+    backgroundColor: '#1E293B',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#334155',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+  },
+  mobileSummaryLeft: {
+    flex: 1,
+    marginRight: 10,
+  },
+  mobileSummaryTitle: {
+    fontSize: 13,
+    fontWeight: '800',
+    color: '#F8FAFC',
+  },
+  mobileSummaryContext: {
+    fontSize: 10,
+    color: '#94A3B8',
+    marginTop: 2,
+  },
+  mobileSummaryRight: {
+    backgroundColor: '#0F172A',
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 6,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  mobileSummaryNodeText: {
+    fontSize: 10,
+    color: '#14B8A6',
+    fontWeight: '700',
+  },
+  mobileMainArea: {
+    flex: 1,
+    padding: 10,
+  },
+  mobileModeToggle: {
+    flexDirection: 'row',
+    backgroundColor: '#1E293B',
+    borderRadius: 8,
+    padding: 2,
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: '#334155',
+  },
+  mobileModeBtn: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 6,
+    borderRadius: 6,
+  },
+  mobileModeBtnActive: {
+    backgroundColor: '#0F172A',
+  },
+  mobileModeBtnText: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#94A3B8',
+  },
+  mobileModeBtnTextActive: {
+    color: '#14B8A6',
+  },
+  mobileTabs: {
+    flexDirection: 'row',
+    borderTopWidth: 1,
+    borderTopColor: '#1E293B',
+    backgroundColor: '#0F172A',
+    paddingVertical: 8,
+  },
+  mobileTabBtn: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mobileTabBtnActive: {},
+  mobileTabText: {
+    fontSize: 9,
+    color: '#64748B',
+    marginTop: 4,
+    fontWeight: '600',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+  },
+  mobileTabTextActive: {
+    color: '#14B8A6',
+    fontWeight: '800',
+  },
+});
