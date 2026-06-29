@@ -1,6 +1,6 @@
 [
   {
-    "id": "pals-uti",
+    "id": "uti",
     "title": "Urinary Tract Infection (UTI)",
     "version": "2026.1",
     "chiefComplaints": ["uti", "dysuria", "urinary frequency", "unexplained fever", "smelly urine"],
@@ -83,7 +83,7 @@
     }
   },
   {
-    "id": "pals-ssti",
+    "id": "ssti",
     "title": "SSTI Cellulitis / Abscess",
     "version": "2026.1",
     "chiefComplaints": ["cellulitis", "abscess", "boil", "skin infection", "erythema", "wound drainage"],
@@ -162,7 +162,7 @@
     }
   },
   {
-    "id": "pals-dehydration",
+    "id": "dehydration",
     "title": "Gastroenteritis & Dehydration",
     "version": "2026.1",
     "chiefComplaints": ["vomiting", "diarrhea", "dehydration", "poor intake", "stomach bug"],
@@ -241,7 +241,7 @@
     }
   },
   {
-    "id": "pals-fb",
+    "id": "fb",
     "title": "Foreign Body Ingestion",
     "version": "2026.1",
     "chiefComplaints": ["foreign body", "swallowed coin", "swallowed button battery", "swallowed magnet", "choking"],
@@ -327,7 +327,7 @@
     }
   },
   {
-    "id": "pals-throat",
+    "id": "throat",
     "title": "Throat Infection / Suspected PTA",
     "version": "2026.1",
     "chiefComplaints": ["sore throat", "difficulty swallowing", "muffled voice", "trismus", "tonsillitis"],
@@ -408,7 +408,7 @@
     }
   },
   {
-    "id": "pals-abuse",
+    "id": "abuse",
     "title": "Suspected Physical Abuse",
     "version": "2026.1",
     "chiefComplaints": ["abuse", "suspicious injury", "fracture in infant", "burn", "bruising in non-mobile infant"],

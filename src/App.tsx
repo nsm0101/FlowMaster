@@ -711,11 +711,11 @@ export default function App() {
                   { id: 'pals-shock', label: '3. Shock Resuscitation' },
                   { id: 'pals-brady', label: '4. Bradycardia (<60 bpm)' },
                   { id: 'pals-tachy', label: '5. Tachycardia (Fast HR)' },
-                  { id: 'pals-febrile-infant', label: '6. Febrile Infant (≤56 days)' },
-                  { id: 'pals-sepsis', label: '7. ED Sepsis & Septic Shock' },
-                  { id: 'pals-status', label: '8. Status Epilepticus (Active)' },
-                  { id: 'pals-dka', label: '9. Diabetic Ketoacidosis (DKA)' },
-                  { id: 'pals-scd-fever', label: '10. Sickle Cell with Fever' }
+                  { id: 'febrile-infant', label: '6. Febrile Infant (≤56 days)' },
+                  { id: 'sepsis', label: '7. ED Sepsis & Septic Shock' },
+                  { id: 'status-epilepticus', label: '8. Status Epilepticus (Active)' },
+                  { id: 'dka', label: '9. Diabetic Ketoacidosis (DKA)' },
+                  { id: 'scd-fever', label: '10. Sickle Cell with Fever' }
                 ].map((cc) => {
                   const isSelected = pathway.id === cc.id;
                   return (

@@ -1,6 +1,6 @@
 [
   {
-    "id": "pals-febrile-infant",
+    "id": "febrile-infant",
     "title": "Febrile Infant (≤ 56 Days Old)",
     "version": "2026.1",
     "chiefComplaints": ["fever", "neonatal fever", "febrile infant", "warm to touch"],
@@ -106,7 +106,7 @@
     }
   },
   {
-    "id": "pals-sepsis",
+    "id": "sepsis",
     "title": "ED Sepsis & Septic Shock",
     "version": "2026.1",
     "chiefComplaints": ["sepsis", "septic shock", "high fever", "toxic appearance", "poor perfusion", "hypotension", "lethargy"],
@@ -179,7 +179,7 @@
     }
   },
   {
-    "id": "pals-status",
+    "id": "status-epilepticus",
     "title": "Status Epilepticus",
     "version": "2026.1",
     "chiefComplaints": ["seizure", "active seizure", "convulsion", "status epilepticus", "fits"],
@@ -245,7 +245,7 @@
     }
   },
   {
-    "id": "pals-dka",
+    "id": "dka",
     "title": "Diabetic Ketoacidosis (DKA)",
     "version": "2026.1",
     "chiefComplaints": ["dka", "hyperglycemia", "high blood sugar", "altered mental status", "vomiting", "kussmaul breathing", "polydipsia", "polyuria"],
@@ -326,7 +326,7 @@
     }
   },
   {
-    "id": "pals-scd-fever",
+    "id": "scd-fever",
     "title": "Sickle Cell Disease with Fever",
     "version": "2026.1",
     "chiefComplaints": ["fever in sickle cell", "sickle cell fever", "scd fever", "sickle cell crisis"],
